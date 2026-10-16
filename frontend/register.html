@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0D47A1">
+  <meta name="description" content="Create your Baba Go Again account.">
+  <title>Register | Baba Go Again</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/register.js?v=20261016-community1" defer></script>
+  <link rel="stylesheet" href="/bga-features.css?v=20261016-features1">
+</head>
+
+<body class="bga-page">
+<nav class="bga-feature-nav" aria-label="Baba Go Again sections"><a href="/">Home</a> · <a href="/community">Community</a> · <a href="/messages">Messages</a> · <a href="/media">Audio & Video</a> · <a href="/public-figures">Public Figures</a> · <a href="/wallet">Wallet</a> · <a href="/admin-center">Admin Centre</a></nav>
+  <header class="topbar">
+    <a class="brand" href="/">
+      <span class="brand-icon">B</span>
+      <span>Baba Go Again</span>
+    </a>
+    <a class="login-link" href="/login">Log In</a>
+  </header>
+
+  <main class="registration-page">
+    <section class="registration-heading">
+      <span class="eyebrow">JOIN THE COMMUNITY</span>
+      <h1>Create your account</h1>
+      <p>
+        Complete the form below to register with Baba Go Again.
+        Fields marked * are required.
+      </p>
+    </section>
+
+    <form id="registerForm" class="registration-card">
+<!-- BABA GO AGAIN LANGUAGE SELECTOR START -->
+      <div class="form-field language-field">
+        <label for="preferredLanguage">Preferred Language *</label>
+        <select id="preferredLanguage"
+                name="preferredLanguage"
+                autocomplete="language"
+                required>
+          <option value="en" selected>English</option>
+          <optgroup label="Northern Nigeria">
+            <option value="ha">Hausa</option>
+            <option value="ff">Fulfulde</option>
+            <option value="kr">Kanuri</option>
+            <option value="nup">Nupe</option>
+            <option value="tiv">Tiv</option>
+            <option value="ber">Berom</option>
+            <option value="gome">Goemai</option>
+            <option value="anc">Ngas (Angas)</option>
+            <option value="jbu">Jukun</option>
+            <option value="idoma">Idoma</option>
+            <option value="igl">Igala</option>
+            <option value="gbag">Gbagyi (Gwari)</option>
+            <option value="igb">Ebira</option>
+            <option value="mda">Mada</option>
+            <option value="tan">Tangale</option>
+          </optgroup>
+          <optgroup label="Southern Nigeria">
+            <option value="bin">Edo (Bini)</option>
+            <option value="urh">Urhobo</option>
+            <option value="iso">Isoko</option>
+            <option value="its">Itsekiri</option>
+            <option value="ij">Ijaw (Izon)</option>
+            <option value="kal">Kalabari</option>
+            <option value="ibb">Ibibio</option>
+            <option value="ann">Annang</option>
+            <option value="efi">Efik</option>
+            <option value="ogo">Ogoni (Khana)</option>
+            <option value="ogb">Ogba</option>
+            <option value="ukw">Ukwuani</option>
+          </optgroup>
+          <optgroup label="Eastern Nigeria">
+            <option value="ig">Igbo</option>
+            <option value="ikw">Ikwerre</option>
+            <option value="ekp">Ekpeye</option>
+            <option value="etc">Etche</option>
+            <option value="oro">Oron</option>
+            <option value="efi2">Ejagham</option>
+            <option value="bky">Bekwarra</option>
+            <option value="yal">Yala</option>
+            <option value="eza">Ezaa</option>
+            <option value="edd">Afikpo (Edda)</option>
+            <option value="ohu">Ohuhu</option>
+          </optgroup>
+          <optgroup label="Western Nigeria">
+            <option value="yo">Yoruba</option>
+            <option value="ako">Akoko</option>
+            <option value="oku">Okun</option>
+            <option value="ije">Ijebu</option>
+            <option value="egb">Egba</option>
+            <option value="ijs">Ijesha</option>
+            <option value="owo">Owo</option>
+            <option value="idn">Idanre</option>
+            <option value="ond">Ondo</option>
+            <option value="pcm">Nigerian Pidgin</option>
+          </optgroup>
+        </select>
+        <small>Choose the language you prefer to use on Baba Go Again.</small>
+      </div>
+<!-- BABA GO AGAIN LANGUAGE SELECTOR END -->
+
+      <div class="form-group profile-photo-group">
+        <label for="profilePhoto">Profile Photo (Optional)</label>
+        <div class="photo-actions">
+          <button id="takePhotoButton" type="button">Take Photo</button>
+          <button id="chooseGalleryButton" type="button">Choose from Gallery</button>
+        </div>
+        <input
+          id="profilePhoto"
+          name="profilePhoto"
+          type="file"
+          accept="image/*"
+          hidden
+        >
+        <input
+          id="cameraPhoto"
+          type="file"
+          accept="image/*"
+          capture="user"
+          hidden
+        >
+        <small>Take a photo with your camera or choose one from your gallery.</small>
+        <div id="photoPreviewContainer" hidden>
+          <img id="photoPreview" alt="Profile photo preview"
+               style="width:120px;height:120px;object-fit:cover;border-radius:50%">
+          <button id="removePhoto" type="button">Remove Photo</button>
+        </div>
+        <p id="photoMessage" role="status" aria-live="polite"></p>
+      </div>
+
+      <fieldset>
+        <legend>1. Personal information</legend>
+
+        <div class="form-grid">
+          <div class="form-field full-width">
+            <label for="name">Full name *</label>
+            <input id="name" name="name" type="text"
+                   autocomplete="name" maxlength="100"
+                   required>
+          </div>
+
+          <div class="form-field">
+            <label for="phone">Phone number *</label>
+            <input id="phone" name="phone" type="tel"
+                   autocomplete="tel" maxlength="20"
+                   placeholder="+2348012345678" required>
+            <small>Include your country code where possible.</small>
+          </div>
+
+          <div class="form-field">
+            <label for="email">Email address *</label>
+            <input id="email" name="email" type="email"
+                   autocomplete="email" maxlength="254"
+                   required>
+            <small>Used for account verification.</small>
+          </div>
+
+          <div class="form-field">
+            <label for="password">Create password *</label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              autocomplete="new-password"
+              minlength="12"
+              maxlength="128"
+              required
+            >
+            <small>Use at least 12 characters.</small>
+          </div>
+
+          <div class="form-field">
+            <label for="confirmPassword">Confirm password *</label>
+            <input
+              id="confirmPassword"
+              name="confirmPassword"
+              type="password"
+              autocomplete="new-password"
+              minlength="12"
+              maxlength="128"
+              required
+            >
+          </div>
+
+          <div class="form-field full-width">
+            <label for="address">Residential address *</label>
+            <textarea id="address" name="address"
+                      autocomplete="street-address"
+                      maxlength="300" rows="3" required></textarea>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>2. Geographical information</legend>
+        <p class="section-help">
+          Select each location in order. The available options
+          depend on your previous selection.
+        </p>
+
+        <div class="form-grid">
+          <div class="form-field">
+            <label for="state">State or FCT *</label>
+            <select id="state" name="state" required>
+              <option value="">Loading states...</option>
+            </select>
+          </div>
+
+          <div class="form-field">
+            <label for="lga">Local Government Area *</label>
+            <select id="lga" name="lga" required disabled>
+              <option value="">Select a state first</option>
+            </select>
+          </div>
+
+          <div class="form-field">
+            <label for="ward">Ward *</label>
+            <select id="ward" name="ward" required disabled>
+              <option value="">Select an LGA first</option>
+            </select>
+          </div>
+
+          <div class="form-field">
+            <label for="pollingUnit">Polling unit</label>
+            <select id="pollingUnit" name="pollingUnit" disabled>
+              <option value="">Select a ward first</option>
+            </select>
+            <small>
+              Optional. This selection does not verify voter registration.
+            </small>
+          </div>
+        </div>
+
+        <p id="locationMessage" class="form-message"
+           role="status" aria-live="polite"></p>
+      </fieldset>
+
+      <fieldset>
+        <legend>3. Select your role</legend>
+        <p class="section-help">
+          Select every role that applies. Leadership roles may
+          require administrator approval.
+        </p>
+
+        <div class="role-grid">
+          <label class="choice-card">
+            <input type="checkbox" name="roles" value="Member">
+            <span>Member</span>
+          </label>
+
+          <label class="choice-card">
+            <input type="checkbox" name="roles" value="Volunteer">
+            <span>Volunteer</span>
+          </label>
+
+          <label class="choice-card">
+            <input type="checkbox" name="roles" value="Youth Leader">
+            <span>Youth Leader</span>
+          </label>
+
+          <label class="choice-card">
+            <input type="checkbox" name="roles" value="Women Leader">
+            <span>Women Leader</span>
+          </label>
+
+          <label class="choice-card">
+            <input type="checkbox" name="roles" value="Politician">
+            <span>Politician</span>
+          </label>
+
+          <label class="choice-card">
+            <input type="checkbox" name="roles" value="Coordinator">
+            <span>Coordinator</span>
+          </label>
+
+          <label class="choice-card">
+            <input type="checkbox" name="roles" value="Other" id="otherRole">
+            <span>Other</span>
+          </label>
+        </div>
+
+        <div class="form-field" id="otherRoleField" hidden>
+          <label for="otherRoleText">Please specify your role</label>
+          <input id="otherRoleText" name="otherRoleText"
+                 type="text" maxlength="100">
+        </div>
+
+        <p id="roleMessage" class="form-message"
+           role="status" aria-live="polite"></p>
+      </fieldset>
+
+      <fieldset>
+        <legend>4. Terms and Conditions</legend>
+
+        <div class="terms-box">
+          <h3>1. Acceptance</h3>
+          <p>
+            By registering, you agree to follow these Terms and
+            the applicable laws governing your use of Baba Go Again.
+          </p>
+
+          <h3>2. Accurate information</h3>
+          <p>
+            You agree to provide accurate information and not
+            impersonate another person or misuse another person's data.
+          </p>
+
+          <h3>3. Account security</h3>
+          <p>
+            You are responsible for protecting your account and
+            reporting suspected unauthorized access.
+          </p>
+
+          <h3>4. Respectful use</h3>
+          <p>
+            You must not use the platform for fraud, threats,
+            harassment, impersonation, unlawful discrimination,
+            malicious software, or other unlawful activities.
+          </p>
+
+          <h3>5. Roles and permissions</h3>
+          <p>
+            Selecting a leadership role does not automatically grant
+            leadership or administrative privileges. Some roles may
+            require review and approval.
+          </p>
+
+          <h3>6. Personal information</h3>
+          <p>
+            Information collected during registration will be used
+            only for disclosed and legitimate purposes, such as
+            account management and communication. Sensitive information
+            must receive appropriate protection and lawful handling.
+          </p>
+
+          <h3>7. Email verification</h3>
+          <p>
+            You must verify access to your email address when asked.
+            Email verification alone does not prove your identity or
+            voter-registration status.
+          </p>
+
+          <h3>8. Suspension</h3>
+          <p>
+            Accounts may be restricted for serious misuse or violations
+            of these Terms, subject to applicable law and an appropriate
+            review process.
+          </p>
+
+          <h3>9. Changes and contact</h3>
+          <p>
+            Material changes will be communicated where appropriate.
+            Baba Go Again must publish a contact channel for complaints
+            and account-support requests.
+          </p>
+
+          <p class="draft-note">
+            These Terms are a draft and must be reviewed before launch.
+          </p>
+        </div>
+
+        <div class="acceptance-list">
+          <label class="acceptance-choice">
+            <input id="acceptTerms" name="acceptTerms"
+                   type="checkbox" required>
+            <span>
+              I have read and agree to the Terms and Conditions. *
+            </span>
+          </label>
+
+          <label class="acceptance-choice">
+            <input id="acceptPrivacy" name="acceptPrivacy"
+                   type="checkbox" required>
+            <span>
+              I acknowledge the Privacy Notice and how my information
+              will be used. *
+            </span>
+          </label>
+        </div>
+      </fieldset>
+
+      <button class="button primary register-button" type="submit">
+        Register Now
+      </button>
+
+      <p id="formMessage" class="form-message"
+         role="status" aria-live="polite"></p>
+
+      <p class="login-prompt">
+        Already registered? <a href="/login">Log in</a>
+      </p>
+    </form>
+  </main>
+
+  <footer>
+    <p>&copy; 2026 Baba Go Again. Please review our privacy information.</p>
+  </footer>
+  <script src="/profile-photo.js?v=20261015fix1" defer></script>
+</body>
+</html>

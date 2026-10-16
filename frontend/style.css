@@ -1,0 +1,1020 @@
+:root {
+  --blue: #1565C0;
+  --deep-blue: #0D47A1;
+  --light-blue: #EAF3FF;
+  --white: #FFFFFF;
+  --text: #172B4D;
+  --muted: #65758B;
+  --border: #E1EAF5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--white);
+  color: var(--text);
+  font-family: Arial, sans-serif;
+  line-height: 1.6;
+}
+
+a {
+  text-decoration: none;
+}
+
+.topbar {
+  min-height: 72px;
+  padding: 14px 6%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--white);
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--deep-blue);
+  font-size: 21px;
+  font-weight: 800;
+}
+
+.brand-icon,
+.art-logo {
+  display: grid;
+  place-items: center;
+  background: var(--blue);
+  color: var(--white);
+  font-weight: 800;
+}
+
+.brand-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+}
+
+.login-link {
+  color: var(--deep-blue);
+  font-weight: 700;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  gap: 35px;
+  padding: 65px 7%;
+  background: linear-gradient(
+    120deg,
+    #FFFFFF 35%,
+    #EAF3FF 100%
+  );
+}
+
+.hero-content {
+  max-width: 560px;
+}
+
+.eyebrow {
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 2px;
+}
+
+.hero h1 {
+  margin: 18px 0;
+  font-size: clamp(34px, 5vw, 56px);
+  line-height: 1.12;
+  color: var(--deep-blue);
+}
+
+.hero-content > p {
+  color: var(--muted);
+  font-size: 17px;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.button {
+  display: inline-block;
+  padding: 13px 21px;
+  border-radius: 9px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.primary {
+  background: var(--blue);
+  color: var(--white);
+}
+
+.secondary {
+  color: var(--deep-blue);
+  border: 1px solid var(--blue);
+  background: var(--white);
+}
+
+.hero-art {
+  min-height: 320px;
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 24px;
+  background: linear-gradient(
+    145deg,
+    #1565C0,
+    #0D47A1
+  );
+}
+
+.art-circle {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.circle-one {
+  width: 260px;
+  height: 260px;
+  top: -90px;
+  right: -60px;
+}
+
+.circle-two {
+  width: 190px;
+  height: 190px;
+  bottom: -70px;
+  left: -40px;
+}
+
+.art-card {
+  position: relative;
+  width: 80%;
+  padding: 28px 15px;
+  text-align: center;
+  color: var(--deep-blue);
+  background: var(--white);
+  border-radius: 18px;
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.15);
+}
+
+.art-logo {
+  width: 60px;
+  height: 60px;
+  margin: auto;
+  border-radius: 18px;
+  font-size: 30px;
+}
+
+.art-card h2 {
+  margin-bottom: 4px;
+}
+
+.art-card p {
+  color: var(--muted);
+}
+
+.art-features {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.art-features span {
+  padding: 6px 10px;
+  border-radius: 20px;
+  background: var(--light-blue);
+  font-size: 12px;
+}
+
+.features {
+  padding: 50px 7%;
+}
+
+.features > h2 {
+  text-align: center;
+  color: var(--deep-blue);
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 25px;
+}
+
+.feature-card {
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--white);
+}
+
+.feature-icon {
+  font-size: 28px;
+}
+
+.feature-card h3 {
+  color: var(--deep-blue);
+}
+
+.feature-card p {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.join-banner {
+  margin: 20px 7% 50px;
+  padding: 32px 20px;
+  border-radius: 18px;
+  text-align: center;
+  color: var(--white);
+  background: var(--deep-blue);
+}
+
+.white-button {
+  margin-top: 10px;
+  background: var(--white);
+  color: var(--deep-blue);
+}
+
+footer {
+  padding: 20px;
+  text-align: center;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+
+@media (max-width: 760px) {
+  .hero {
+    grid-template-columns: 1fr;
+    padding: 40px 6%;
+  }
+
+  .hero-art {
+    min-height: 270px;
+  }
+
+  .feature-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .features {
+    padding: 35px 6%;
+  }
+}
+
+@media (max-width: 380px) {
+  .brand {
+    font-size: 17px;
+  }
+
+  .feature-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .button {
+    width: 100%;
+  }
+}
+
+/* Baba Go Again registration form */
+.registration-page {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 42px 20px 60px;
+}
+
+.registration-heading {
+  max-width: 720px;
+  margin: 0 auto 28px;
+  text-align: center;
+}
+
+.registration-heading h1 {
+  margin: 12px 0;
+  color: var(--deep-blue);
+  font-size: clamp(30px, 5vw, 44px);
+  line-height: 1.2;
+}
+
+.registration-heading p,
+.section-help {
+  color: var(--muted);
+}
+
+.registration-card {
+  padding: clamp(18px, 4vw, 36px);
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 0 12px 36px rgba(13, 71, 161, 0.08);
+}
+
+.registration-card fieldset {
+  min-width: 0;
+  margin: 0 0 28px;
+  padding: 22px 0;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.registration-card legend {
+  padding: 0 10px 0 0;
+  color: var(--deep-blue);
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.form-field {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.full-width {
+  grid-column: 1 / -1;
+}
+
+.form-field label {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.form-field input,
+.form-field select,
+.form-field textarea {
+  width: 100%;
+  min-height: 48px;
+  padding: 11px 12px;
+  border: 1px solid #B9CBE0;
+  border-radius: 8px;
+  background: var(--white);
+  color: var(--text);
+  font: inherit;
+}
+
+.form-field textarea {
+  resize: vertical;
+}
+
+.form-field input:focus,
+.form-field select:focus,
+.form-field textarea:focus {
+  outline: 3px solid rgba(21, 101, 192, 0.16);
+  border-color: var(--blue);
+}
+
+.form-field select:disabled {
+  background: #F1F4F8;
+  color: #65758B;
+}
+
+.form-field small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.role-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 18px 0;
+}
+
+.choice-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.choice-card:has(input:checked) {
+  background: var(--light-blue);
+  border-color: var(--blue);
+}
+
+.choice-card input,
+.acceptance-choice input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--blue);
+  flex: 0 0 auto;
+}
+
+.terms-box {
+  max-height: 350px;
+  overflow-y: auto;
+  padding: 18px;
+  background: #F7FAFE;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.terms-box h3 {
+  margin: 14px 0 4px;
+  color: var(--deep-blue);
+  font-size: 15px;
+}
+
+.terms-box h3:first-child {
+  margin-top: 0;
+}
+
+.terms-box p {
+  margin: 0 0 12px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.draft-note {
+  font-weight: 700;
+}
+
+.acceptance-list {
+  display: grid;
+  gap: 15px;
+  margin-top: 20px;
+}
+
+.acceptance-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.register-button {
+  width: 100%;
+  min-height: 52px;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+}
+
+.register-button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.form-message {
+  min-height: 1.5em;
+  overflow-wrap: anywhere;
+}
+
+.login-prompt {
+  text-align: center;
+  color: var(--muted);
+}
+
+.login-prompt a {
+  color: var(--deep-blue);
+  font-weight: 700;
+}
+
+@media (max-width: 680px) {
+  .registration-page {
+    padding: 28px 14px 42px;
+  }
+
+  .form-grid,
+  .role-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .registration-card {
+    padding: 18px;
+  }
+}
+
+/* ==========================================
+   BABA GO AGAIN — BLUE-DOMINANT THEME
+   Target: approximately 90% blue, 10% white
+   ========================================== */
+
+:root {
+  --blue: #1565C0;
+  --deep-blue: #082B68;
+  --light-blue: #0D47A1;
+  --white: #FFFFFF;
+  --text: #FFFFFF;
+  --muted: #D9E7FF;
+}
+
+html {
+  min-height: 100%;
+  background: #082B68;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  background: linear-gradient(145deg, #082B68 0%, #0D47A1 55%, #1565C0 100%);
+  color: #FFFFFF;
+}
+
+.topbar {
+  background: #082B68;
+  color: #FFFFFF;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.topbar a,
+.topbar .brand,
+.topbar .login-link {
+  color: #FFFFFF;
+}
+
+.hero {
+  background: transparent;
+  color: #FFFFFF;
+}
+
+.hero-content,
+.hero-content h1,
+.hero-content h2,
+.hero-content h3,
+.hero-content p,
+.hero-content label,
+.hero-content legend,
+.hero-content .section-help,
+.hero-content small,
+.hero-content .eyebrow {
+  color: #FFFFFF;
+}
+
+.hero-art {
+  background: transparent;
+}
+
+.art-card {
+  background: #0D47A1;
+  color: #FFFFFF;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+}
+
+.art-card h2,
+.art-card p {
+  color: #FFFFFF;
+}
+
+fieldset,
+.registration-card,
+.form-section,
+.profile-photo-group {
+  background: #0D47A1;
+  color: #FFFFFF;
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+select,
+textarea {
+  background: #FFFFFF;
+  color: #082B68;
+  border: 1px solid #D5E4FF;
+  border-radius: 8px;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #536B8B;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: 2px solid #FFFFFF;
+  outline-offset: 2px;
+  border-color: #FFFFFF;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: #FFFFFF;
+}
+
+input[type="file"] {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 12px;
+  color: #FFFFFF;
+  background: #1565C0;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 8px;
+}
+
+button,
+.button {
+  background: #FFFFFF;
+  color: #082B68;
+  border: 1px solid #FFFFFF;
+  border-radius: 8px;
+  font-weight: 700;
+}
+
+button:hover,
+.button:hover {
+  background: #D9E7FF;
+  color: #082B68;
+}
+
+button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+a {
+  color: #FFFFFF;
+  text-underline-offset: 3px;
+}
+
+a:hover {
+  color: #D9E7FF;
+}
+
+.form-message,
+#formMessage,
+#locationMessage,
+#photoMessage {
+  color: #FFFFFF;
+}
+
+#photoPreview {
+  border: 3px solid #FFFFFF;
+}
+
+#photoPreviewContainer {
+  margin-top: 12px;
+}
+
+footer {
+  background: #082B68;
+  color: #FFFFFF;
+}
+
+@media (max-width: 640px) {
+  .hero {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+}
+
+/* Baba Go Again — softer blue theme */
+body {
+  background: linear-gradient(145deg, #EAF3FF 0%, #D6E7FF 55%, #C5DCFF 100%);
+  color: #12345A;
+}
+
+.topbar,
+footer {
+  background: #174A91;
+  color: #FFFFFF;
+}
+
+.topbar a,
+.topbar .brand,
+.topbar .login-link,
+footer a {
+  color: #FFFFFF;
+}
+
+.hero,
+.hero-content,
+.hero-content h1,
+.hero-content h2,
+.hero-content h3,
+.hero-content p,
+.hero-content label,
+.hero-content legend {
+  color: #12345A;
+}
+
+fieldset,
+.registration-card,
+.form-section,
+.profile-photo-group,
+.art-card {
+  background: #FFFFFF;
+  color: #12345A;
+  border-color: #B8D1F3;
+  border-radius: 12px;
+}
+
+fieldset label,
+.registration-card label,
+.form-section label,
+.art-card h2,
+.art-card p {
+  color: #12345A;
+}
+
+button,
+.button {
+  background: #174A91;
+  color: #FFFFFF;
+  border: 1px solid #174A91;
+  border-radius: 8px;
+}
+
+button:hover,
+.button:hover {
+  background: #0D3269;
+  color: #FFFFFF;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+select,
+textarea {
+  background: #FFFFFF;
+  color: #12345A;
+  border: 1px solid #B8D1F3;
+}
+
+input[type="file"] {
+  background: #F3F7FF;
+  color: #12345A;
+  border: 1px solid #B8D1F3;
+  border-radius: 8px;
+}
+
+/* ACCESSIBILITY FIX: readable text on light backgrounds */
+.hero-content,
+.hero-content p,
+.hero-content .section-help,
+.hero-content small,
+.hero-content label,
+.hero-content legend,
+.form-section,
+.form-section p,
+.form-section label,
+.registration-card,
+.registration-card p,
+fieldset,
+fieldset p,
+.terms,
+.terms p,
+.terms li,
+.terms-content,
+.terms-content p,
+.terms-content li,
+#locationMessage,
+#formMessage {
+  color: #18365C !important;
+  opacity: 1 !important;
+}
+
+h1, h2, h3, h4 {
+  color: #12345A;
+}
+
+select,
+select option {
+  color: #12345A;
+  background-color: #FFFFFF;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #66758A;
+  opacity: 1;
+}
+
+
+/* FINAL READABILITY OVERRIDES */
+body {
+  background: #E8F1FF !important;
+  color: #17365D !important;
+}
+
+.topbar,
+footer {
+  background: #174A91 !important;
+  color: #FFFFFF !important;
+}
+
+.topbar *,
+footer * {
+  color: #FFFFFF !important;
+}
+
+.hero,
+.hero-content {
+  background: transparent !important;
+}
+
+.hero-content,
+.hero-content h1,
+.hero-content h2,
+.hero-content h3,
+.hero-content p,
+.hero-content label,
+.hero-content small,
+.hero-content .section-help,
+.hero-content .eyebrow,
+fieldset,
+fieldset legend,
+fieldset p,
+fieldset label,
+fieldset small,
+.form-section,
+.form-section p,
+.form-section label,
+.registration-card,
+.registration-card p,
+.registration-card label,
+.registration-card small,
+.terms,
+.terms p,
+.terms li,
+.terms-content,
+.terms-content p,
+.terms-content li,
+#locationMessage,
+#formMessage,
+#photoMessage {
+  color: #17365D !important;
+  opacity: 1 !important;
+}
+
+fieldset,
+.registration-card,
+.form-section,
+.profile-photo-group,
+.art-card {
+  background: #FFFFFF !important;
+  color: #17365D !important;
+  border-color: #B8D1F3 !important;
+}
+
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  background: #FFFFFF !important;
+  color: #17365D !important;
+  border: 1px solid #9DB9DE !important;
+}
+
+select:disabled {
+  background: #EDF2F9 !important;
+  color: #596B82 !important;
+  opacity: 1 !important;
+}
+
+button,
+.button {
+  background: #174A91 !important;
+  color: #FFFFFF !important;
+  border-color: #174A91 !important;
+}
+
+
+/* Fix hidden camera and gallery file inputs */
+[hidden] {
+  display: none !important;
+}
+
+#profilePhoto,
+#cameraPhoto {
+  display: none !important;
+}
+
+.photo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.photo-actions button {
+  display: inline-block;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: #174A91;
+  color: #FFFFFF;
+  border: 0;
+  font-weight: 700;
+}
+
+.photo-actions button:focus-visible {
+  outline: 3px solid #F2B544;
+  outline-offset: 3px;
+}
+
+/* Improve welcome-page text contrast */
+.hero-content p,
+.hero-content .section-help,
+.hero-content small,
+.hero-content .eyebrow {
+  color: #17365D !important;
+  opacity: 1 !important;
+  text-shadow: none !important;
+}
+
+.hero-content h1,
+.hero-content h2,
+.hero-content h3 {
+  color: #102F63 !important;
+  opacity: 1 !important;
+}
+
+.hero-content {
+  background: transparent !important;
+}
+
+.registration-card fieldset p,
+.registration-card fieldset li,
+.registration-card fieldset small {
+  color: #17365D !important;
+  opacity: 1 !important;
+}
+
+/* Welcome page: campaign poster first, readable copy, responsive layout. */
+.welcome-page { background: #eaf2ff; color: #17365d; }
+.welcome-main { width: min(1100px, calc(100% - 32px)); margin: 24px auto 48px; }
+.welcome-poster-section { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .85fr); align-items: center; gap: clamp(20px, 4vw, 44px); padding: clamp(16px, 3vw, 32px); background: #fff; border: 1px solid #c8d9f0; border-radius: 20px; box-shadow: 0 10px 30px rgba(13, 71, 161, .12); }
+.welcome-poster { display: block; width: 100%; height: auto; max-height: 780px; object-fit: contain; border-radius: 12px; }
+.welcome-copy { color: #17365d !important; }
+.welcome-copy .eyebrow { color: #174a91 !important; opacity: 1 !important; font-weight: 800; letter-spacing: .12em; }
+.welcome-copy h1 { color: #102f66 !important; line-height: 1.12; font-size: clamp(2rem, 5vw, 3.5rem); }
+.welcome-copy p { color: #294765 !important; opacity: 1 !important; line-height: 1.7; font-size: 1.08rem; }
+.welcome-copy .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
+.welcome-copy .button { display: inline-flex; justify-content: center; align-items: center; min-height: 48px; padding: 12px 20px; text-decoration: none; border-radius: 10px; font-weight: 800; }
+.welcome-copy .button.primary { color: #fff !important; background: #174a91; }
+.welcome-copy .button.secondary { color: #174a91 !important; background: #fff; border: 2px solid #174a91; }
+.welcome-features { margin-top: 34px; }
+.welcome-features h2, .welcome-features h3, .welcome-features p { color: #17365d !important; opacity: 1 !important; }
+@media (max-width: 760px) { .welcome-main { width: min(100% - 20px, 600px); margin-top: 12px; } .welcome-poster-section { grid-template-columns: 1fr; gap: 20px; padding: 14px; } .welcome-poster { width: min(100%, 520px); margin: 0 auto; max-height: none; } .welcome-copy { padding: 4px 4px 10px; } }
+
+/* Registration language selector: keep it visible and readable */
+#registerForm .language-field {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  margin: 0 0 22px !important;
+  padding: 16px !important;
+  background: #ffffff !important;
+  border: 1px solid #b6cbe3 !important;
+  border-radius: 12px !important;
+}
+#registerForm .language-field label {
+  display: block !important;
+  color: #17365d !important;
+  font-weight: 700 !important;
+  margin-bottom: 10px !important;
+}
+#registerForm #preferredLanguage {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  width: 100% !important;
+  min-height: 48px !important;
+  color: #17365d !important;
+  background: #ffffff !important;
+  border: 1px solid #9bb5d3 !important;
+  border-radius: 8px !important;
+  padding: 10px !important;
+}
+#registerForm .language-field small {
+  display: block !important;
+  color: #344b65 !important;
+  margin-top: 8px !important;
+}

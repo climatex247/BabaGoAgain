@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0D47A1">
+  <meta name="description" content="Sign in to your Baba Go Again account.">
+  <title>Log In | Baba Go Again</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/bga-features.css?v=20261016-features1">
+</head>
+
+<body class="bga-page">
+<nav class="bga-feature-nav" aria-label="Baba Go Again sections"><a href="/">Home</a> · <a href="/community">Community</a> · <a href="/messages">Messages</a> · <a href="/media">Audio & Video</a> · <a href="/public-figures">Public Figures</a> · <a href="/wallet">Wallet</a> · <a href="/admin-center">Admin Centre</a></nav>
+  <header class="topbar">
+    <a class="brand" href="/">
+      <span class="brand-icon">B</span>
+      <span>Baba Go Again</span>
+    </a>
+
+    <a class="login-link" href="/register">Create Account</a>
+  </header>
+
+  <main class="hero">
+    <section class="hero-content">
+      <span class="eyebrow">WELCOME BACK</span>
+
+      <h1>Log in to your account</h1>
+
+      <p>
+        Connect with your communities and continue
+        your conversations on Baba Go Again.
+      </p>
+
+      <form id="loginForm">
+        <label for="email">Email address</label>
+        <input
+          id="email"
+          name="email"
+          type="email"
+          autocomplete="username"
+          maxlength="254"
+          required
+        >
+
+        <label for="password">Password</label>
+        <input
+          id="password"
+          name="password"
+          type="password"
+          autocomplete="current-password"
+          required
+        >
+
+        <button class="button primary" type="submit">
+          Log In
+        </button>
+
+        <p id="formMessage" role="status" aria-live="polite"></p>
+
+        <p class="forgot-password">
+          <a id="forgotPasswordLink" href="/forgot-password">
+            Forgot your password?
+          </a>
+        </p>
+      </form>
+
+      <p>
+        Don't have an account?
+        <a class="login-link" href="/register">Create one</a>
+      </p>
+    </section>
+
+    <div class="hero-art">
+      <div class="art-card">
+        <div class="art-logo">B</div>
+        <h2>Your community, connected</h2>
+        <p>
+          One place for conversations, groups,
+          audio, video, and creator communities.
+        </p>
+      </div>
+    </div>
+  </main>
+  <script src="/login.js" defer></script>
+</body>
+</html>
