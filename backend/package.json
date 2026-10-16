@@ -20,6 +20,6 @@
     "helmet": "^8.3.0",
     "morgan": "^1.12.1",
     "nigeria-inec-geo": "^1.0.0",
-    "sql.js": "file:sql.js-1.13.0.tgz"
+    "sql.js": "^1.13.0"
   }
 }
