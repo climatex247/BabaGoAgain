@@ -16,7 +16,6 @@ server.pid
 *.recovery-backup-*
 backups/
 **/backups/
-*.tgz
 .DS_Store
 
 # Exclude all backup and database files
@@ -29,6 +28,5 @@ backups/
 *.sqlite*
 *.db
 *.db-*
-*.tgz
 
 *.bak-*
