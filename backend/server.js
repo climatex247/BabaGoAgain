@@ -731,7 +731,7 @@ if (process.env.NODE_ENV === 'production') {
   if (process.env.COOKIE_SECURE !== 'true') { console.error('FATAL: Production requires COOKIE_SECURE=true behind HTTPS.'); process.exit(1); }
 }
 
-const server = app.listen(PORT, '127.0.0.1', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log('================================');
   console.log('BABA GO AGAIN BACKEND');
   console.log(`Port: ${PORT}`);
