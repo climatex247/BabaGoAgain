@@ -8,7 +8,7 @@ const crypto = require('crypto');
 const db = require('./database');
 const opay = require('./opay');
 const path = require('path');
-require('dotenv').config();
+require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 
 const app = express();
 
@@ -41,7 +41,15 @@ app.get('/api', (req, res) => {
   });
 });
 
-app.use(express.static(frontendPath));
+app.use(express.static(frontendPath, {
+  setHeaders(res, filePath) {
+    if (/register\.(js|html)$/.test(filePath)) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
+  }
+}));
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(frontendPath, 'index.html'));
@@ -74,9 +82,23 @@ const passwordMatches = async (password, stored) => {
   return actualBuf.length === expectedBuf.length && crypto.timingSafeEqual(actualBuf, expectedBuf);
 };
 const tokenHash = token => crypto.createHash('sha256').update(token).digest('hex');
-const sessionSecret = () => process.env.SESSION_SECRET || 'CHANGE_THIS_SESSION_SECRET_BEFORE_PUBLIC_DEPLOYMENT';
-function makeSession(userId) { const payload=Buffer.from(JSON.stringify({sub:userId,exp:Date.now()+7*24*60*60*1000})).toString('base64url'); const sig=crypto.createHmac('sha256',sessionSecret()).update(payload).digest('base64url'); return `${payload}.${sig}`; }
-function readSession(req) { const raw=String(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('bga_session='))?.slice('bga_session='.length); if(!raw)return null; const [payload,sig]=raw.split('.'); if(!payload||!sig)return null; const expected=crypto.createHmac('sha256',sessionSecret()).update(payload).digest(); let actual; try { actual=Buffer.from(sig,'base64url'); } catch { return null; } if(actual.length!==expected.length||!crypto.timingSafeEqual(actual,expected))return null; try { const data=JSON.parse(Buffer.from(payload,'base64url').toString()); return data.exp>Date.now()?data.sub:null; } catch { return null; } }
+const sessionSecret = () => String(process.env.SESSION_SECRET || '' );
+function makeSession(userId, sessionVersion=0) { const payload=Buffer.from(JSON.stringify({sub:userId,ver:sessionVersion,exp:Date.now()+7*24*60*60*1000})).toString('base64url'); const sig=crypto.createHmac('sha256',sessionSecret()).update(payload).digest('base64url'); return `${payload}.${sig}`; }
+function readSession(req) {
+  const raw = String(req.headers.cookie || '').split(';').map(x => x.trim())
+    .find(x => x.startsWith('bga_session='))?.slice('bga_session='.length);
+  if (!raw) return null;
+  const [payload, sig] = raw.split('.');
+  if (!payload || !sig || !sessionSecret()) return null;
+  const expected = crypto.createHmac('sha256', sessionSecret()).update(payload).digest();
+  let actual;
+  try { actual = Buffer.from(sig, 'base64url'); } catch { return null; }
+  if (actual.length !== expected.length || !crypto.timingSafeEqual(actual, expected)) return null;
+  try {
+    const data = JSON.parse(Buffer.from(payload, 'base64url').toString());
+    return data.exp > Date.now() && data.sub && Number.isInteger(data.ver) ? data : null;
+  } catch { return null; }
+}
 
 async function sendEmail(to, subject, textContent, htmlContent) {
   const key = process.env.BREVO_API_KEY;
@@ -84,7 +106,7 @@ async function sendEmail(to, subject, textContent, htmlContent) {
   const senderName = process.env.BREVO_SENDER_NAME || 'Baba Go Again';
   if (!key || !senderEmail) {
     console.error('Email delivery not configured: set BREVO_API_KEY and BREVO_SENDER_EMAIL in backend/.env');
-    return false;
+    throw new Error('Email delivery is not configured.');
   }
   const response = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST', headers: { 'api-key': key, 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -100,6 +122,16 @@ async function sendEmail(to, subject, textContent, htmlContent) {
 const publicUser = row => ({ id: row.id, name: row.full_name, email: row.email, phone: row.phone, state: row.state_name, lga: row.lga_name, ward: row.ward_name, preferredLanguage: row.preferred_language, roles: JSON.parse(row.roles_json || '[]'), emailVerified: Boolean(row.email_verified), status: row.status });
 const safeText = (v, max=300) => String(v || '').trim().slice(0, max);
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function getPublicBaseUrl() {
+  const value = String(process.env.APP_BASE_URL || '').trim().replace(/\/$/, '');
+  if (!value) throw new Error('APP_BASE_URL is not configured.');
+  const url = new URL(value);
+  if (!['https:', 'http:'].includes(url.protocol) || url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
+    throw new Error('APP_BASE_URL must be a reachable public HTTP(S) address.');
+  }
+  return value;
+}
+
 const geo = require('nigeria-inec-geo');
 const locationById = (collection, id) => collection.find(x => String(x.portal_id) === String(id));
 
@@ -121,16 +153,35 @@ app.post('/api/auth/register', async (req, res) => {
     if (req.body.pollingUnit && (!pu || pu.state_code !== state.code || pu.lga_code !== lga.code || pu.ward_code !== ward.code)) return res.status(400).json({ success:false, message:'The polling unit does not match your selected location.' });
     if (!roles.length) return res.status(400).json({ success:false, message:'Select at least one role.' });
     if (req.body.acceptTerms !== true || req.body.acceptPrivacy !== true) return res.status(400).json({ success:false, message:'Accept the Terms and Privacy Notice to continue.' });
-    const duplicate = await db.get('SELECT id FROM users WHERE email = ? OR phone = ?', [email, phone]);
-    if (duplicate) return res.status(409).json({ success:false, message:'An account with that email address or phone number already exists.' });
+    const duplicate = await db.get('SELECT id, email, phone, email_verified, status FROM users WHERE email = ? OR phone = ?', [email, phone]);
+    if (duplicate) {
+      const sameEmail = duplicate.email === email;
+      const unverified = sameEmail && !duplicate.email_verified && duplicate.status === 'pending_verification';
+      return res.status(409).json({
+        success: false,
+        code: unverified ? 'VERIFICATION_REQUIRED' : 'ACCOUNT_EXISTS',
+        message: unverified
+          ? 'An account already exists with this email but is not verified. Do not register again. Go to Login and use Resend Verification Email.'
+          : 'An account with that email address or phone number already exists. Please log in or recover your existing account.'
+      });
+    }
     const id = crypto.randomUUID(), now = new Date().toISOString(), hash = await passwordHash(password);
     const otherRole = roles.includes('Other') ? safeText(req.body.otherRoleText,100) : null;
     await db.run(`INSERT INTO users (id,full_name,phone,email,preferred_language,address,state_id,state_name,lga_id,lga_name,ward_id,ward_name,polling_unit_id,roles_json,other_role,password_hash,email_verified,status,accepted_terms,accepted_privacy,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'pending_verification',1,1,?,?)`, [id,name,phone,email,language,address,String(state.portal_id),state.name,String(lga.portal_id),lga.name,String(ward.portal_id),ward.name,pu ? String(pu.portal_id) : null,JSON.stringify(roles),otherRole,hash,now,now]);
     const token = crypto.randomBytes(32).toString('hex'), expires = Date.now()+TOKEN_TTL;
     await db.run('INSERT INTO email_verification_tokens (token_hash,user_id,expires_at,created_at) VALUES (?,?,?,?)',[tokenHash(token),id,expires,Date.now()]);
-    const base = (process.env.APP_BASE_URL || `http://127.0.0.1:${PORT}`).replace(/\/$/,'');
-    try { await sendEmail(email,'Verify your Baba Go Again account',`Hello ${name}, verify your account using this link: ${base}/verify-email?token=${token}\nThis link expires in 60 minutes.`,`<p>Hello ${name.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))},</p><p>Please verify your Baba Go Again account.</p><p><a href="${base}/verify-email?token=${token}">Verify email address</a></p><p>This link expires in 60 minutes.</p>`); }
-    catch (mailError) { console.error(mailError.message); return res.status(201).json({success:true, message:'Your account was created, but the verification email could not be sent. Please contact support or check the email configuration.', emailDelivery:false}); }
+    try {
+      const base = getPublicBaseUrl();
+      await sendEmail(email,'Verify your Baba Go Again account',`Hello ${name}, verify your account using this link: ${base}/verify-email?token=${token}\nThis link expires in 60 minutes.`,`<p>Hello ${name.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))},</p><p>Please verify your Baba Go Again account.</p><p><a href="${base}/verify-email?token=${token}">Verify email address</a></p><p>This link expires in 60 minutes.</p>`);
+    } catch (mailError) {
+      console.error('Registration verification email failed:', mailError.message);
+      return res.status(201).json({
+        success: true,
+        code: 'VERIFICATION_EMAIL_FAILED',
+        message: 'Your account has been created, but the verification email could not be sent. Do not register again. Go to Login and use Resend Verification Email when email service is available.',
+        emailDelivery: false
+      });
+    }
     return res.status(201).json({success:true,message:'Account created. Check your email and verify your address before logging in.',emailDelivery:true});
   } catch (error) {
     if (/UNIQUE constraint failed/.test(error.message)) return res.status(409).json({success:false,message:'An account with that email address or phone number already exists.'});
@@ -138,12 +189,14 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
+app.get('/email-verification', (req, res) => res.sendFile(path.join(frontendPath, 'verify-email.html')));
+
 app.get('/verify-email', async (req,res) => {
   try {
     const token = safeText(req.query.token, 200);
     if (!token) return res.status(400).send('Verification link is missing.');
     const record = await db.get('SELECT user_id,expires_at FROM email_verification_tokens WHERE token_hash = ?',[tokenHash(token)]);
-    if (!record || Number(record.expires_at) < Date.now()) return res.status(400).send('<h1>Verification link expired or invalid</h1><p>Please register again or contact support.</p><a href="/login">Log in</a>');
+    if (!record || Number(record.expires_at) < Date.now()) return res.status(400).send('<h1>Verification link expired or invalid</h1><p>Your account may still exist. Do not register again. Return to login and use Resend Verification Email to request a new link.</p><a href="/login">Go to login</a>');
     await db.transaction(tx => { tx.run('UPDATE users SET email_verified=1,status=\'active\',updated_at=? WHERE id=?',[new Date().toISOString(),record.user_id]); tx.run('DELETE FROM email_verification_tokens WHERE token_hash=?',[tokenHash(token)]); });
     return res.send('<!doctype html><meta name="viewport" content="width=device-width"><title>Email verified</title><h1>Email verified successfully</h1><p>Your account is ready. You can now log in.</p><a href="/login">Go to login</a>');
   } catch(e) { console.error(e); return res.status(500).send('Could not verify email. Please try again later.'); }
@@ -165,8 +218,6 @@ app.post('/api/auth/resend-verification', async (req, res) => {
     if (now - previous < 60000) {
       return res.json({ success: true, message: generic });
     }
-    verificationResendCooldown.set(email, now);
-
     const user = await db.get(
       "SELECT id, full_name, email, email_verified, status FROM users WHERE email = ?",
       [email]
@@ -176,19 +227,25 @@ app.post('/api/auth/resend-verification', async (req, res) => {
       const token = crypto.randomBytes(32).toString('hex');
       const expires = now + 60 * 60 * 1000;
 
-      await db.run('DELETE FROM email_verification_tokens WHERE user_id = ?', [user.id]);
+      // Preserve existing verification tokens until email delivery succeeds.
       await db.run(
         'INSERT INTO email_verification_tokens (token_hash, user_id, expires_at, created_at) VALUES (?,?,?,?)',
         [tokenHash(token), user.id, expires, now]
       );
 
-      const base = (process.env.APP_BASE_URL || 'http://127.0.0.1:' + PORT).replace(/\/$/, '');
+      const base = getPublicBaseUrl();
       await sendEmail(
         email,
         'Verify your Baba Go Again account',
         'Hello ' + user.full_name + ', verify your account using this link: ' + base + '/verify-email?token=' + token + '\nThis link expires in 60 minutes.',
         '<p>Please verify your Baba Go Again account.</p><p><a href="' + base + '/verify-email?token=' + token + '">Verify email address</a></p><p>This link expires in 60 minutes.</p>'
       );
+      // Replace older tokens only after successful email delivery.
+      await db.run(
+        'DELETE FROM email_verification_tokens WHERE user_id = ? AND token_hash <> ?',
+        [user.id, tokenHash(token)]
+      );
+      verificationResendCooldown.set(email, Date.now());
     }
 
     return res.json({ success: true, message: generic });
@@ -207,12 +264,29 @@ app.post('/api/auth/login', async (req,res) => {
     const user=await db.get('SELECT * FROM users WHERE email=?',[email]);
     if (!user || !(await passwordMatches(password,user.password_hash))) return res.status(401).json({success:false,message:'Email or password is incorrect.'});
     if (!user.email_verified || user.status !== 'active') return res.status(403).json({success:false,message:'Please verify your email address before logging in.'});
-    res.setHeader('Set-Cookie', `bga_session=${makeSession(user.id)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800${process.env.COOKIE_SECURE === 'true' ? '; Secure' : ''}`);
+    res.setHeader('Set-Cookie', `bga_session=${makeSession(user.id, user.session_version || 0)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800${process.env.COOKIE_SECURE === 'true' ? '; Secure' : ''}`);
     return res.json({success:true,message:'Login successful.',user:publicUser(user)});
   } catch(e) { console.error('Login error:',e); return res.status(500).json({success:false,message:'Login is temporarily unavailable.'}); }
 });
 
-app.get('/api/auth/me', async (req,res) => { try { const id=readSession(req); if(!id)return res.status(401).json({success:false,message:'Not signed in.'}); const user=await db.get('SELECT * FROM users WHERE id=? AND status=\'active\' AND email_verified=1',[id]); if(!user)return res.status(401).json({success:false,message:'Session is no longer valid.'}); return res.json({success:true,user:publicUser(user)}); } catch(e){return res.status(500).json({success:false,message:'Could not load account.'});} });
+app.get('/api/auth/me', async (req, res) => {
+  try {
+    const session = readSession(req);
+    if (!session || !session.sub) {
+      return res.status(401).json({ success: false, message: 'Not signed in.' });
+    }
+    const user = await db.get(
+      "SELECT * FROM users WHERE id=? AND status='active' AND email_verified=1",
+      [session.sub]
+    );
+    if (!user || Number(user.session_version || 0) !== session.ver) {
+      return res.status(401).json({ success: false, message: 'Session is no longer valid. Please log in again.' });
+    }
+    return res.json({ success: true, user: publicUser(user) });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: 'Could not load account.' });
+  }
+});
 app.post('/api/auth/logout', (req,res) => { res.setHeader('Set-Cookie', `bga_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${process.env.COOKIE_SECURE === 'true' ? '; Secure' : ''}`); res.json({success:true,message:'Logged out.'}); });
 
 app.post('/api/auth/forgot-password', async (req,res) => {
@@ -223,10 +297,12 @@ app.post('/api/auth/forgot-password', async (req,res) => {
     const user=await db.get('SELECT id,email,full_name FROM users WHERE email=? AND email_verified=1 AND status=\'active\'',[email]);
     if (user) {
       const token=crypto.randomBytes(32).toString('hex'), now=Date.now();
-      await db.run('DELETE FROM password_reset_tokens WHERE user_id=?',[user.id]);
+      // Remove only expired tokens; preserve valid links until replacement email delivery succeeds.
+      await db.run('DELETE FROM password_reset_tokens WHERE user_id=? AND expires_at<?',[user.id,now]);
       await db.run('INSERT INTO password_reset_tokens (token_hash,user_id,expires_at,created_at) VALUES (?,?,?,?)',[tokenHash(token),user.id,now+RESET_TTL,now]);
-      const base=(process.env.APP_BASE_URL||`http://127.0.0.1:${PORT}`).replace(/\/$/,'');
+      const base=getPublicBaseUrl();
       await sendEmail(email,'Reset your Baba Go Again password',`Reset your password: ${base}/reset-password?token=${token}\nThis link expires in 30 minutes.`,`<p>Reset your Baba Go Again password.</p><p><a href="${base}/reset-password?token=${token}">Reset password</a></p><p>This link expires in 30 minutes.</p>`);
+      await db.run('DELETE FROM password_reset_tokens WHERE user_id=? AND token_hash<>?',[user.id,tokenHash(token)]);
     }
     return res.json({success:true,message:generic});
   } catch(e) { console.error('Password reset request error:',e.message); return res.status(503).json({success:false,message:'Password recovery email could not be sent. Please try again later.'}); }
@@ -235,12 +311,21 @@ app.post('/api/auth/forgot-password', async (req,res) => {
 app.post('/api/auth/reset-password', async (req,res) => {
   try {
     const token=safeText(req.body.token,200), password=String(req.body.password||''), confirm=String(req.body.confirmPassword||'');
+    if (!token) return res.status(400).json({success:false,message:'Reset token is missing. Request a new password-reset link.'});
     if (password.length<12 || password.length>128) return res.status(400).json({success:false,message:'Password must be between 12 and 128 characters.'});
     if (password!==confirm) return res.status(400).json({success:false,message:'Passwords do not match.'});
-    const hash=await passwordHash(password), th=tokenHash(token);
+    const th=tokenHash(token);
     const record=await db.get('SELECT user_id,expires_at FROM password_reset_tokens WHERE token_hash=?',[th]);
-    if (!record || Number(record.expires_at)<Date.now()) return res.status(400).json({success:false,message:'This reset link is invalid or expired. Request a new one.'});
-    await db.transaction(tx=>{tx.run('UPDATE users SET password_hash=?,updated_at=? WHERE id=?',[hash,new Date().toISOString(),record.user_id]);tx.run('DELETE FROM password_reset_tokens WHERE user_id=?',[record.user_id]);});
+    if (!record) return res.status(400).json({success:false,message:'This reset link is invalid or expired. Request a new one.'});
+    if (Number(record.expires_at)<Date.now()) {
+      await db.run('DELETE FROM password_reset_tokens WHERE token_hash=?',[th]);
+      return res.status(400).json({success:false,message:'This reset link is invalid or expired. Request a new one.'});
+    }
+    const hash=await passwordHash(password);
+    await db.transaction(tx=>{
+      tx.run('UPDATE users SET password_hash=?, session_version=session_version+1, updated_at=? WHERE id=?',[hash,new Date().toISOString(),record.user_id]);
+      tx.run('DELETE FROM password_reset_tokens WHERE user_id=?',[record.user_id]);
+    });
     return res.json({success:true,message:'Password changed successfully. You can now log in.'});
   } catch(e) { console.error('Password reset error:',e); return res.status(500).json({success:false,message:'Could not reset password. Please try again.'}); }
 });
@@ -250,13 +335,14 @@ app.post('/api/auth/reset-password', async (req,res) => {
 
 /* Authenticated community MVP: feed, groups, events and volunteering. */
 async function authenticatedUser(req, res) {
-  const userId = readSession(req);
+  const session = readSession(req);
+  const userId = session && session.sub;
   if (!userId) {
     res.status(401).json({ success: false, message: 'Please log in to continue.' });
     return null;
   }
-  const user = await db.get("SELECT id, full_name, email, phone, roles_json, status, email_verified FROM users WHERE id = ?", [userId]);
-  if (!user || user.status !== 'active' || !user.email_verified) {
+  const user = await db.get("SELECT id, full_name, email, phone, roles_json, status, email_verified, session_version FROM users WHERE id = ?", [userId]);
+  if (!user || user.status !== 'active' || !user.email_verified || Number(user.session_version || 0) !== Number(session.ver || 0)) {
     res.status(401).json({ success: false, message: 'Your session is no longer valid. Please log in again.' });
     return null;
   }
@@ -272,7 +358,7 @@ app.get('/community', (req, res) => res.sendFile(path.join(frontendPath, 'commun
 app.get('/api/community/feed', async (req, res) => {
   try {
     if (!await authenticatedUser(req, res)) return;
-    const posts = await db.all(`SELECT p.id, p.body, p.created_at AS createdAt, u.full_name AS authorName,
+    const posts = await db.all(`SELECT p.id, p.user_id AS userId, p.body, p.created_at AS createdAt, u.full_name AS authorName,
       (SELECT COUNT(*) FROM post_comments c WHERE c.post_id=p.id) AS commentCount
       FROM community_posts p JOIN users u ON u.id=p.user_id ORDER BY p.created_at DESC LIMIT 50`);
     res.json({ success: true, data: posts });
@@ -290,12 +376,56 @@ app.post('/api/community/posts', async (req, res) => {
   } catch (e) { console.error('Post creation failed:',e); res.status(500).json({success:false,message:'Could not publish your post.'}); }
 });
 
+
+app.delete('/api/community/posts/:id', async (req, res) => {
+  try {
+    const user = await authenticatedUser(req, res);
+    if (!user) return;
+    const post = await db.get(
+      'SELECT id,user_id AS userId FROM community_posts WHERE id=?',
+      [req.params.id]
+    );
+    if (!post) return res.status(404).json({success:false,message:'Post not found.'});
+    if (String(post.userId) !== String(user.id)) {
+      return res.status(403).json({success:false,message:'You can only delete your own posts.'});
+    }
+    await db.transaction(tx => {
+      tx.run('DELETE FROM post_comments WHERE post_id=?', [post.id]);
+      tx.run('DELETE FROM community_posts WHERE id=? AND user_id=?', [post.id,user.id]);
+    });
+    res.json({success:true,message:'Post and its comments deleted.'});
+  } catch (e) {
+    console.error('Post deletion failed:',e);
+    res.status(500).json({success:false,message:'Could not delete post.'});
+  }
+});
+
+app.delete('/api/community/comments/:id', async (req, res) => {
+  try {
+    const user = await authenticatedUser(req, res);
+    if (!user) return;
+    const comment = await db.get(
+      'SELECT id,user_id AS userId FROM post_comments WHERE id=?',
+      [req.params.id]
+    );
+    if (!comment) return res.status(404).json({success:false,message:'Comment not found.'});
+    if (String(comment.userId) !== String(user.id)) {
+      return res.status(403).json({success:false,message:'You can only delete your own comments.'});
+    }
+    await db.run('DELETE FROM post_comments WHERE id=? AND user_id=?', [comment.id,user.id]);
+    res.json({success:true,message:'Comment deleted.'});
+  } catch (e) {
+    console.error('Comment deletion failed:',e);
+    res.status(500).json({success:false,message:'Could not delete comment.'});
+  }
+});
+
 app.get('/api/community/posts/:id/comments', async (req,res) => {
   try {
     if (!await authenticatedUser(req,res)) return;
     const post = await db.get('SELECT id FROM community_posts WHERE id=?',[req.params.id]);
     if (!post) return res.status(404).json({success:false,message:'Post not found.'});
-    const data = await db.all(`SELECT c.id,c.body,c.created_at AS createdAt,u.full_name AS authorName FROM post_comments c JOIN users u ON u.id=c.user_id WHERE c.post_id=? ORDER BY c.created_at ASC LIMIT 100`,[post.id]);
+    const data = await db.all(`SELECT c.id,c.user_id AS userId,c.body,c.created_at AS createdAt,u.full_name AS authorName FROM post_comments c JOIN users u ON u.id=c.user_id WHERE c.post_id=? ORDER BY c.created_at ASC LIMIT 100`,[post.id]);
     res.json({success:true,data});
   } catch(e) { console.error('Comments read failed:',e); res.status(500).json({success:false,message:'Could not load comments.'}); }
 });
@@ -303,11 +433,17 @@ app.get('/api/community/posts/:id/comments', async (req,res) => {
 app.post('/api/community/posts/:id/comments', async (req,res) => {
   try {
     const user=await authenticatedUser(req,res); if(!user)return;
-    const post=await db.get('SELECT id FROM community_posts WHERE id=?',[req.params.id]);
+    const post=await db.get('SELECT id,user_id AS userId FROM community_posts WHERE id=?',[req.params.id]);
     if(!post)return res.status(404).json({success:false,message:'Post not found.'});
     const body=inputText(req.body.body,1000); if(!body)return res.status(400).json({success:false,message:'Comment cannot be empty.'});
     const id=crypto.randomUUID(),createdAt=new Date().toISOString();
     await db.run('INSERT INTO post_comments (id,post_id,user_id,body,created_at) VALUES (?,?,?,?,?)',[id,post.id,user.id,body,createdAt]);
+    if(post.userId!==user.id){
+      try {
+        await db.run("CREATE TABLE IF NOT EXISTS bga_notifications (id TEXT PRIMARY KEY,user_id TEXT NOT NULL,type TEXT NOT NULL DEFAULT 'general',title TEXT NOT NULL,body TEXT NOT NULL DEFAULT '',link TEXT NOT NULL DEFAULT '/notifications',is_read INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,read_at TEXT)");
+        await db.run('INSERT INTO bga_notifications (id,user_id,type,title,body,link,is_read,created_at) VALUES (?,?,?,?,?,?,0,?)',[crypto.randomUUID(),post.userId,'community','New comment from '+String(user.full_name||'A member').slice(0,100),body.slice(0,300),'/community',createdAt]);
+      } catch(notificationError) { console.error('Community comment notification failed:',notificationError); }
+    }
     res.status(201).json({success:true,data:{id,body,createdAt,authorName:user.full_name}});
   } catch(e) { console.error('Comment creation failed:',e); res.status(500).json({success:false,message:'Could not publish comment.'}); }
 });
@@ -315,7 +451,7 @@ app.post('/api/community/posts/:id/comments', async (req,res) => {
 app.get('/api/community/groups', async (req,res) => {
   try {
     const user=await authenticatedUser(req,res); if(!user)return;
-    const data=await db.all(`SELECT g.id,g.name,g.description,g.created_at AS createdAt,u.full_name AS creatorName,
+    const data=await db.all(`SELECT g.id,g.name,g.description,g.created_by AS creatorId,g.created_at AS createdAt,u.full_name AS creatorName,
       (SELECT COUNT(*) FROM group_members m WHERE m.group_id=g.id) AS memberCount,
       EXISTS(SELECT 1 FROM group_members mine WHERE mine.group_id=g.id AND mine.user_id=?) AS joined
       FROM community_groups g JOIN users u ON u.id=g.created_by ORDER BY g.created_at DESC LIMIT 100`,[user.id]);
@@ -337,17 +473,37 @@ app.post('/api/community/groups', async (req,res) => {
 app.post('/api/community/groups/:id/join', async (req,res) => {
   try {
     const user=await authenticatedUser(req,res); if(!user)return;
-    const group=await db.get('SELECT id FROM community_groups WHERE id=?',[req.params.id]);
+    const group=await db.get('SELECT id,name,created_by AS creatorId FROM community_groups WHERE id=?',[req.params.id]);
     if(!group)return res.status(404).json({success:false,message:'Group not found.'});
-    await db.run('INSERT OR IGNORE INTO group_members (group_id,user_id,joined_at) VALUES (?,?,?)',[group.id,user.id,new Date().toISOString()]);
+    const joinedAt=new Date().toISOString();
+    const result=await db.run('INSERT OR IGNORE INTO group_members (group_id,user_id,joined_at) VALUES (?,?,?)',[group.id,user.id,joinedAt]);
+    if(result.changes && String(group.creatorId)!==String(user.id)){
+      try {
+        await db.run("CREATE TABLE IF NOT EXISTS bga_notifications (id TEXT PRIMARY KEY,user_id TEXT NOT NULL,type TEXT NOT NULL DEFAULT 'general',title TEXT NOT NULL,body TEXT NOT NULL DEFAULT '',link TEXT NOT NULL DEFAULT '/notifications',is_read INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,read_at TEXT)");
+        await db.run('INSERT INTO bga_notifications (id,user_id,type,title,body,link,is_read,created_at) VALUES (?,?,?,?,?,?,0,?)',[crypto.randomUUID(),group.creatorId,'community','New group member','Someone joined your group: '+group.name.slice(0,100),'/community',joinedAt]);
+      } catch(notificationError) { console.error('Group join notification failed:',notificationError); }
+    }
     res.json({success:true,message:'You joined the group.'});
   } catch(e) { console.error('Group join failed:',e); res.status(500).json({success:false,message:'Could not join group.'}); }
+});
+
+
+app.post('/api/community/groups/:id/leave', async (req,res) => {
+  try {
+    const user=await authenticatedUser(req,res); if(!user)return;
+    const group=await db.get('SELECT id,created_by AS createdBy FROM community_groups WHERE id=?',[req.params.id]);
+    if(!group)return res.status(404).json({success:false,message:'Group not found.'});
+    if(String(group.createdBy)===String(user.id))
+      return res.status(400).json({success:false,message:'The group creator cannot leave their own group. Delete the group or transfer ownership first.'});
+    const result=await db.run('DELETE FROM group_members WHERE group_id=? AND user_id=?',[group.id,user.id]);
+    res.json({success:true,message:result.changes?'You left the group.':'You were not a member of this group.'});
+  } catch(e) { console.error('Leave group failed:',e); res.status(500).json({success:false,message:'Could not leave group.'}); }
 });
 
 app.get('/api/community/events', async (req,res) => {
   try {
     const user=await authenticatedUser(req,res); if(!user)return;
-    const data=await db.all(`SELECT e.id,e.title,e.description,e.location,e.starts_at AS startsAt,e.created_at AS createdAt,u.full_name AS creatorName,
+    const data=await db.all(`SELECT e.id,e.title,e.description,e.location,e.starts_at AS startsAt,e.created_by AS creatorId,e.created_at AS createdAt,u.full_name AS creatorName,
       (SELECT COUNT(*) FROM event_attendees a WHERE a.event_id=e.id) AS attendeeCount,
       EXISTS(SELECT 1 FROM event_attendees mine WHERE mine.event_id=e.id AND mine.user_id=?) AS attending
       FROM community_events e JOIN users u ON u.id=e.created_by ORDER BY e.starts_at ASC LIMIT 100`,[user.id]);
@@ -370,12 +526,46 @@ app.post('/api/community/events', async (req,res) => {
 app.post('/api/community/events/:id/attend', async (req,res) => {
   try {
     const user=await authenticatedUser(req,res); if(!user)return;
-    const event=await db.get('SELECT id,starts_at FROM community_events WHERE id=?',[req.params.id]);
+    const event=await db.get('SELECT id,title,starts_at,created_by AS creatorId FROM community_events WHERE id=?',[req.params.id]);
     if(!event)return res.status(404).json({success:false,message:'Event not found.'});
     if(Date.parse(event.starts_at)<=Date.now())return res.status(400).json({success:false,message:'This event has already started.'});
-    await db.run('INSERT OR IGNORE INTO event_attendees (event_id,user_id,joined_at) VALUES (?,?,?)',[event.id,user.id,new Date().toISOString()]);
+    const joinedAt=new Date().toISOString();
+    const result=await db.run('INSERT OR IGNORE INTO event_attendees (event_id,user_id,joined_at) VALUES (?,?,?)',[event.id,user.id,joinedAt]);
+    if(result.changes && String(event.creatorId)!==String(user.id)){
+      try {
+        await db.run("CREATE TABLE IF NOT EXISTS bga_notifications (id TEXT PRIMARY KEY,user_id TEXT NOT NULL,type TEXT NOT NULL DEFAULT 'general',title TEXT NOT NULL,body TEXT NOT NULL DEFAULT '',link TEXT NOT NULL DEFAULT '/notifications',is_read INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,read_at TEXT)");
+        await db.run('INSERT INTO bga_notifications (id,user_id,type,title,body,link,is_read,created_at) VALUES (?,?,?,?,?,?,0,?)',[crypto.randomUUID(),event.creatorId,'community','New event attendee','Someone registered for your event: '+event.title.slice(0,120),'/community',joinedAt]);
+      } catch(notificationError) { console.error('Event attendance notification failed:',notificationError); }
+    }
     res.json({success:true,message:'You are registered for this event.'});
   } catch(e) { console.error('Event attendance failed:',e); res.status(500).json({success:false,message:'Could not join event.'}); }
+});
+
+
+app.post('/api/community/events/:id/cancel-attendance', async (req,res) => {
+  try {
+    const user=await authenticatedUser(req,res); if(!user)return;
+    const event=await db.get('SELECT id,starts_at AS startsAt FROM community_events WHERE id=?',[req.params.id]);
+    if(!event)return res.status(404).json({success:false,message:'Event not found.'});
+    if(Date.parse(event.startsAt)<=Date.now())return res.status(400).json({success:false,message:'Attendance cannot be cancelled after the event has started.'});
+    const result=await db.run('DELETE FROM event_attendees WHERE event_id=? AND user_id=?',[event.id,user.id]);
+    res.json({success:true,message:result.changes?'Your attendance has been cancelled.':'You were not registered for this event.'});
+  } catch(e) { console.error('Cancel attendance failed:',e); res.status(500).json({success:false,message:'Could not cancel attendance.'}); }
+});
+
+app.delete('/api/community/events/:id', async (req,res) => {
+  try {
+    const user=await authenticatedUser(req,res); if(!user)return;
+    const event=await db.get('SELECT id,created_by AS createdBy FROM community_events WHERE id=?',[req.params.id]);
+    if(!event)return res.status(404).json({success:false,message:'Event not found.'});
+    if(String(event.createdBy)!==String(user.id))
+      return res.status(403).json({success:false,message:'You can only delete events you created.'});
+    await db.transaction(tx=>{
+      tx.run('DELETE FROM event_attendees WHERE event_id=?',[event.id]);
+      tx.run('DELETE FROM community_events WHERE id=? AND created_by=?',[event.id,user.id]);
+    });
+    res.json({success:true,message:'Your event was deleted.'});
+  } catch(e) { console.error('Event deletion failed:',e); res.status(500).json({success:false,message:'Could not delete event.'}); }
 });
 
 app.post('/api/volunteers/apply', async (req,res) => {
@@ -507,6 +697,24 @@ app.get('/api/admin/wallet/members', async (req,res) => {
   } catch(e) { console.error('Admin wallet member search failed:',e.message); res.status(500).json({success:false,message:'Could not search members.'}); }
 });
 
+
+async function sendBgaWalletNotification(userId, type, title, body) {
+  try {
+    await db.run(`CREATE TABLE IF NOT EXISTS bga_notifications (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL, type TEXT NOT NULL DEFAULT 'general',
+      title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '',
+      link TEXT NOT NULL DEFAULT '/notifications',
+      is_read INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, read_at TEXT
+    )`);
+    await db.run(
+      'INSERT INTO bga_notifications (id,user_id,type,title,body,link,created_at) VALUES (?,?,?,?,?,?,?)',
+      [crypto.randomUUID(), userId, type, title, body, '/wallet', new Date().toISOString()]
+    );
+  } catch (e) {
+    console.error('Wallet notification failed:', e.message);
+  }
+}
+
 app.post('/api/admin/wallet/credit', async (req,res) => {
   try {
     const admin = await requireWalletAdmin(req,res); if (!admin) return;
@@ -516,6 +724,7 @@ app.post('/api/admin/wallet/credit', async (req,res) => {
     if (!user) return res.status(404).json({success:false,message:'Verified active member not found.'});
     const id = crypto.randomUUID(), now = new Date().toISOString(), reference = 'BGA-CREDIT-' + id.replace(/-/g,'').toUpperCase();
     await db.run('INSERT INTO wallet_transactions (id,user_id,type,amount_kobo,reference,description,created_by,created_at) VALUES (?,?,?,?,?,?,?,?)',[id,userId,'volunteer_credit',amountNaira*100,reference,description,admin.id,now]);
+      await sendBgaWalletNotification(userId,'wallet','Wallet credited',`Your volunteer wallet was credited with ₦${amountNaira.toLocaleString()}.`);
     res.status(201).json({success:true,message:'Volunteer wallet credited.',data:{reference,amountNaira,balanceKobo:await walletBalanceKobo(userId)}});
   } catch(e) { console.error('Wallet credit failed:',e.message); res.status(500).json({success:false,message:'Could not credit volunteer wallet.'}); }
 });
@@ -542,7 +751,8 @@ app.post('/api/admin/wallet/payouts/:id/reject', async (req,res) => {
       const refundRef = 'PAYOUT-REFUND-' + payout.id;
       if (!tx.get('SELECT id FROM wallet_transactions WHERE reference=?',[refundRef])) tx.run('INSERT INTO wallet_transactions (id,user_id,type,amount_kobo,reference,description,related_payout_id,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?)',[crypto.randomUUID(),payout.user_id,'payout_refund',payout.amount_kobo,refundRef,'Refund for rejected volunteer payout',payout.id,admin.id,new Date().toISOString()]);
     });
-    res.json({success:true,message:'Payout rejected and reserved balance returned to volunteer.'});
+    await sendBgaWalletNotification(payout.user_id,'wallet','Payout rejected','Your payout request was rejected. The reserved balance has been returned to your wallet.');
+      res.json({success:true,message:'Payout rejected and reserved balance returned to volunteer.'});
   } catch(e) { console.error('Payout rejection failed:',e.message); res.status(500).json({success:false,message:'Could not reject payout.'}); }
 });
 
@@ -586,135 +796,145 @@ app.post('/api/admin/wallet/payouts/:id/check-status', async (req,res) => {
     const status = String(response.data?.status || response.data?.orderStatus || '').toUpperCase();
     if (['SUCCESS','SUCCESSFUL','COMPLETED'].includes(status)) {
       await db.run("UPDATE wallet_payouts SET status='completed',failure_reason=NULL,updated_at=?,processed_by=? WHERE id=? AND status='processing'",[new Date().toISOString(),admin.id,payout.id]);
+      await sendBgaWalletNotification(payout.user_id,'wallet','Payout completed','OPay confirmed that your payout was successful.');
       return res.json({success:true,message:'OPay confirmed the payout as successful.',data:{status:'completed'}});
     }
     if (['FAIL','FAILED','CANCEL','CANCELLED','REJECTED'].includes(status)) {
       await refundPayoutIfNeeded(payout.id,admin.id,String(response.data?.errorMsg || response.data?.message || 'OPay reported a failed transfer'));
+      await sendBgaWalletNotification(payout.user_id,'wallet','Payout failed','The payout failed. The held balance has been returned to your wallet.');
       return res.json({success:true,message:'OPay reported a failed payout; the held balance was returned.',data:{status:'failed'}});
     }
     res.json({success:true,message:'OPay has not confirmed a final status. The payout remains processing.',data:{providerStatus:status || 'UNKNOWN',status:'processing'}});
   } catch(e) { console.error('OPay status check failed:',e.message); res.status(502).json({success:false,message:'Could not confirm the payout status. Do not retry the transfer.'}); }
 });
 
-/* Nigeria electoral geography directory */
+/* Nigeria electoral geography directory: SQLite-backed endpoints. */
 
-app.get('/api/locations/states', (req, res) => {
-  res.json({
-    success: true,
-    data: geo.states().map(({ portal_id, code, name }) => ({
-      id: portal_id,
-      code,
-      name
-    }))
-  });
-});
-
-app.get('/api/locations/lgas', (req, res) => {
-  const stateId = String(req.query.state || '');
-  const state = geo.states().find(item => String(item.portal_id) === stateId);
-
-  if (!state) {
-    return res.status(400).json({
-      success: false,
-      message: 'Select a valid state.'
-    });
+app.get('/api/locations/states', async (req, res, next) => {
+  try {
+    const data = await db.all(
+      "SELECT portal_id AS id, code, CASE WHEN name = 'FCT' THEN 'ABUJA (FCT)' ELSE name END AS name FROM location_states ORDER BY name"
+    );
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
   }
-
-  const data = geo.lgas()
-    .filter(item => String(item.state_portal_id) === String(state.portal_id))
-    .map(({ portal_id, code, name }) => ({
-      id: portal_id,
-      code,
-      name
-    }));
-
-  return res.json({ success: true, data });
 });
 
-app.get('/api/locations/wards', (req, res) => {
-  const lgaId = String(req.query.lga || '');
-  const lga = geo.lgas().find(item => String(item.portal_id) === lgaId);
+app.get('/api/locations/lgas', async (req, res, next) => {
+  try {
+    const stateId = String(req.query.state || '');
+    const state = await db.get(
+      'SELECT portal_id, code FROM location_states WHERE portal_id = ?',
+      [stateId]
+    );
 
-  if (!lga) {
-    return res.status(400).json({
-      success: false,
-      message: 'Select a valid local government area.'
-    });
+    if (!state) {
+      return res.status(400).json({
+        success: false,
+        message: 'Select a valid state.'
+      });
+    }
+
+    const data = await db.all(
+      'SELECT portal_id AS id, code, name FROM location_lgas WHERE state_portal_id = ? ORDER BY name',
+      [state.portal_id]
+    );
+
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
   }
-
-  const data = geo.wards()
-    .filter(item => String(item.lga_portal_id) === String(lga.portal_id))
-    .map(({ portal_id, code, name }) => ({
-      id: portal_id,
-      code,
-      name
-    }));
-
-  return res.json({ success: true, data });
 });
 
-app.get('/api/locations/polling-units', (req, res) => {
-  const stateCode = String(req.query.state || '');
-  const lgaCode = String(req.query.lga || '');
-  const wardCode = String(req.query.ward || '');
+app.get('/api/locations/wards', async (req, res, next) => {
+  try {
+    const lgaId = String(req.query.lga || '');
+    const lga = await db.get(
+      'SELECT portal_id FROM location_lgas WHERE portal_id = ?',
+      [lgaId]
+    );
 
-  if (!/^\d{2}$/.test(stateCode) ||
+    if (!lga) {
+      return res.status(400).json({
+        success: false,
+        message: 'Select a valid local government area.'
+      });
+    }
+
+    const data = await db.all(
+      'SELECT portal_id AS id, code, name FROM location_wards WHERE lga_portal_id = ? ORDER BY name',
+      [lga.portal_id]
+    );
+
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/locations/polling-units', async (req, res, next) => {
+  try {
+    const stateCode = String(req.query.state || '');
+    const lgaCode = String(req.query.lga || '');
+    const wardCode = String(req.query.ward || '');
+
+    if (
+      !/^\d{2}$/.test(stateCode) ||
       !/^\d{2}$/.test(lgaCode) ||
-      !/^\d{2}$/.test(wardCode)) {
-    return res.status(400).json({
-      success: false,
-      message: 'Valid state, LGA, and ward codes are required.'
-    });
+      !/^\d{2}$/.test(wardCode)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid state, LGA, and ward codes are required.'
+      });
+    }
+
+    const state = await db.get(
+      'SELECT code FROM location_states WHERE code = ?',
+      [stateCode]
+    );
+
+    if (!state) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid state code.'
+      });
+    }
+
+    const lga = await db.get(
+      'SELECT code FROM location_lgas WHERE state_code = ? AND code = ?',
+      [stateCode, lgaCode]
+    );
+
+    if (!lga) {
+      return res.status(400).json({
+        success: false,
+        message: 'The selected LGA does not belong to this state.'
+      });
+    }
+
+    const ward = await db.get(
+      'SELECT code FROM location_wards WHERE state_code = ? AND lga_code = ? AND code = ?',
+      [stateCode, lgaCode, wardCode]
+    );
+
+    if (!ward) {
+      return res.status(400).json({
+        success: false,
+        message: 'The selected ward does not belong to this LGA.'
+      });
+    }
+
+    const data = await db.all(
+      'SELECT portal_id AS id, code, name, location, full_code AS fullCode FROM location_polling_units WHERE state_code = ? AND lga_code = ? AND ward_code = ? ORDER BY name',
+      [stateCode, lgaCode, wardCode]
+    );
+
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
   }
-
-  const state = geo.states().find(item => item.code === stateCode);
-
-  if (!state) {
-    return res.status(400).json({
-      success: false,
-      message: 'Invalid state code.'
-    });
-  }
-
-  const lga = geo.lgas().find(
-    item => String(item.state_portal_id) === String(state.portal_id) &&
-            item.code === lgaCode
-  );
-
-  if (!lga) {
-    return res.status(400).json({
-      success: false,
-      message: 'The selected LGA does not belong to this state.'
-    });
-  }
-
-  const ward = geo.wards().find(
-    item => String(item.lga_portal_id) === String(lga.portal_id) &&
-            item.code === wardCode
-  );
-
-  if (!ward) {
-    return res.status(400).json({
-      success: false,
-      message: 'The selected ward does not belong to this LGA.'
-    });
-  }
-
-  const data = geo.pollingUnits()
-    .filter(item =>
-      item.state_code === stateCode &&
-      item.lga_code === lgaCode &&
-      item.ward_code === wardCode
-    )
-    .map(({ portal_id, code, name, location, full_code }) => ({
-      id: portal_id,
-      code,
-      name,
-      location,
-      fullCode: full_code
-    }));
-
-  return res.json({ success: true, data });
 });
 
 app.use((req, res) => {
@@ -739,11 +959,15 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log('================================');
 });
 
-function shutdown() {
-  server.close(() => {
+function shutdown(signal) {
+  console.error('[SHUTDOWN DEBUG] Received signal:', signal);
+  console.error('[SHUTDOWN DEBUG] Time:', new Date().toISOString());
+  server.close((err) => {
+    if (err) console.error('[SHUTDOWN DEBUG] Close error:', err);
+    console.error('[SHUTDOWN DEBUG] HTTP server closed.');
     process.exit(0);
   });
 }
 
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));

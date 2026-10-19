@@ -43,6 +43,7 @@ async function initializeDatabase() {
       roles_json TEXT NOT NULL,
       other_role TEXT,
       password_hash TEXT NOT NULL,
+      session_version INTEGER NOT NULL DEFAULT 0,
       email_verified INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'pending_verification',
       accepted_terms INTEGER NOT NULL,
@@ -191,6 +192,13 @@ async function initializeDatabase() {
     CREATE INDEX IF NOT EXISTS idx_reset_expiry
     ON password_reset_tokens(expires_at)
   `);
+
+
+  try {
+    db.run('ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0');
+  } catch (error) {
+    if (!String(error.message).includes('duplicate column name')) throw error;
+  }
 
   saveDatabase();
   return db;

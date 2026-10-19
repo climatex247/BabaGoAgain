@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0D47A1">
+  <title>Email Verification | Baba Go Again</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/bga-features.css?v=20261016-features1">
+</head>
+<body class="bga-page">
+  <header class="topbar">
+    <a class="brand" href="/">Baba Go Again</a>
+    <a class="login-link" href="/login">Sign In</a>
+  </header>
+  <main class="hero">
+    <section class="hero-content">
+      <span class="eyebrow">ACCOUNT VERIFICATION</span>
+      <h1>Verify your email</h1>
+      <p id="verificationStatus" role="status" aria-live="polite">
+        Your verification link should open this page automatically.
+      </p>
+      <p><a class="button primary" href="/login">Continue to login</a></p>
+      <p>Link expired or missing? <a class="login-link" href="/login">Return to login</a> and request another verification email.</p>
+    </section>
+  </main>
+  <script>
+    (() => {
+      const status = document.getElementById('verificationStatus');
+      const token = new URLSearchParams(location.search).get('token');
+      if (!token) {
+        status.textContent = 'Verification token is missing. Return to login and request another verification email.';
+        return;
+      }
+      status.textContent = 'Verifying your email address...';
+      location.replace('/verify-email?token=' + encodeURIComponent(token));
+    })();
+  </script>
+</body>
+</html>

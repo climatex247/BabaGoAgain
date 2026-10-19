@@ -1018,3 +1018,27 @@ button,
   color: #344b65 !important;
   margin-top: 8px !important;
 }
+
+
+/* Registration mobile layout repair */
+html,body{max-width:100%;overflow-x:hidden}
+.registration-page,.registration-card,.form-section,fieldset,
+.registration-heading,.form-grid,.form-field,.role-grid,.choice-card,
+.terms-box,.acceptance-list,.acceptance-choice{min-width:0;max-width:100%}
+.registration-card{width:100%;overflow:hidden}
+.registration-card *,fieldset *{box-sizing:border-box;overflow-wrap:anywhere}
+.role-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.choice-card{display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:flex-start!important;gap:12px;width:100%;text-align:left;padding:14px!important}
+.choice-card input[type="checkbox"]{position:static!important;display:inline-block!important;float:none!important;flex:0 0 20px!important;width:20px!important;height:20px!important;margin:0!important;transform:none!important}
+.choice-card label,.choice-card span{display:inline!important;position:static!important;flex:1 1 auto;min-width:0;text-align:left!important;margin:0!important}
+.acceptance-choice{display:flex!important;flex-direction:row!important;align-items:flex-start!important;justify-content:flex-start!important;gap:12px;width:100%;text-align:left}
+.acceptance-choice input[type="checkbox"]{position:static!important;flex:0 0 20px!important;width:20px!important;height:20px!important;margin:4px 0 0!important;transform:none!important}
+.acceptance-choice label,.acceptance-choice span{position:static!important;display:block!important;flex:1 1 auto;min-width:0;text-align:left!important}
+.terms-box{width:100%;overflow-y:auto;overflow-x:hidden;max-height:350px;line-height:1.55}
+.form-field input,.form-field select,.form-field textarea{width:100%;max-width:100%;min-width:0}
+@media(max-width:680px){
+ .registration-page{padding:20px 12px 36px!important}
+ .registration-card{padding:16px!important}
+ .form-grid,.role-grid{grid-template-columns:minmax(0,1fr)!important}
+ .choice-card{min-height:54px}
+}

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My Profile | Baba Go Again</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f1f5f9;color:#172033;font:16px Arial,sans-serif}
+header{background:#123c78;color:white;padding:18px}main{max-width:760px;margin:24px auto;padding:0 14px}
+.card{background:white;border-radius:12px;padding:22px;margin-bottom:16px}
+label{display:block;font-weight:bold;margin:15px 0 6px}
+input,textarea,select{width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:8px;font:inherit}
+button{background:#14532d;color:white;border:0;border-radius:8px;padding:13px;margin-top:18px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.value{background:#f8fafc;padding:10px;overflow-wrap:anywhere;border-radius:6px}
+#status{margin-top:12px;overflow-wrap:anywhere}.muted{color:#64748b}a{color:inherit}
+@media(max-width:500px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header><strong>Baba Go Again</strong> · <a href="/community">Community</a></header>
+<main>
+<section class="card">
+<h1>My Member Profile</h1>
+<p class="muted">Edit your personal details. Electoral registration details remain read-only.</p>
+<div id="status" role="status"></div>
+<form id="profileForm">
+<label for="name">Full name</label><input id="name" name="name" required minlength="2" maxlength="100">
+<label for="phone">Phone number</label><input id="phone" name="phone" required maxlength="30">
+<label for="address">Residential address</label><textarea id="address" name="address" required maxlength="300" rows="3"></textarea>
+<label for="preferredLanguage">Preferred language</label>
+<select id="preferredLanguage" name="preferredLanguage">
+<option>English</option><option>Hausa</option><option>Yoruba</option><option>Igbo</option><option>Pidgin</option>
+</select>
+<button id="save" type="submit">Save profile</button>
+</form>
+</section>
+<section class="card">
+<h2>Electoral registration details</h2>
+<div class="grid">
+<div><label>State</label><div class="value" id="stateName">—</div></div>
+<div><label>Local Government</label><div class="value" id="lgaName">—</div></div>
+<div><label>Ward</label><div class="value" id="wardName">—</div></div>
+<div><label>Polling Unit ID</label><div class="value" id="pollingUnitId">—</div></div>
+<div><label>Membership roles</label><div class="value" id="roles">—</div></div>
+<div><label>Member since</label><div class="value" id="joinedAt">—</div></div>
+</div>
+</section>
+<section class="card">
+<h2>Account security</h2>
+<a href="/forgot-password.html">Reset my password</a>
+</section>
+</main>
+<script src="/profile.js" defer></script>
+</body>
+</html>

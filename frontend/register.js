@@ -41,22 +41,54 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function fetchRecords(url) {
-    const response = await fetch(url, {
-      headers: { Accept: 'application/json' },
-      cache: 'no-store'
-    });
+    const started = Date.now();
+    console.log('[BGA locations] Request:', url);
 
-    if (!response.ok) {
-      throw new Error(`Server returned HTTP ${response.status}`);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      let response;
+
+      try {
+        response = await fetch(url, {
+          method: 'GET',
+          headers: { Accept: 'application/json' },
+          cache: 'no-store',
+          credentials: 'same-origin',
+          signal: controller.signal
+        });
+      } catch (error) {
+        if (error.name === 'AbortError') {
+          throw new Error('Location request timed out. Please try again.');
+        }
+        throw error;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      const result = await response.json();
+
+      console.log('[BGA locations] Response:', {
+        url,
+        status: response.status,
+        milliseconds: Date.now() - started,
+        success: result.success,
+        count: Array.isArray(result.data) ? result.data.length : null
+      });
+
+      if (!response.ok) {
+        throw new Error(result.message || 'HTTP ' + response.status);
+      }
+
+      if (result.success !== true || !Array.isArray(result.data)) {
+        throw new Error(result.message || 'Unexpected location response');
+      }
+
+      return result.data;
+    } catch (error) {
+      console.error('[BGA locations] Failed:', url, error);
+      throw new Error(error.message || 'Location request failed');
     }
-
-    const result = await response.json();
-
-    if (result.success !== true || !Array.isArray(result.data)) {
-      throw new Error(result.message || 'Unexpected location response');
-    }
-
-    return result.data;
   }
 
   async function loadStates() {
@@ -108,7 +140,11 @@ document.addEventListener('DOMContentLoaded', () => {
       fillSelect(lgaSelect, records, 'Select Local Government Area');
       showMessage(records.length ? `${records.length} LGAs loaded.` : 'No LGAs returned.');
     } catch (error) {
+      if (requestId !== stateRequestId ||
+          stateSelect.value !== selectedState) return;
       resetSelect(lgaSelect, 'Unable to load LGAs');
+      resetSelect(wardSelect, 'Select an LGA first');
+      resetSelect(pollingSelect, 'Select a ward first');
       showMessage(`LGA loading failed: ${error.message}`);
       console.error('LGA loading failed:', error);
     }
@@ -141,7 +177,10 @@ document.addEventListener('DOMContentLoaded', () => {
       fillSelect(wardSelect, records, 'Select ward');
       showMessage(records.length ? `${records.length} wards loaded.` : 'No wards returned.');
     } catch (error) {
+      if (requestId !== lgaRequestId ||
+          lgaSelect.value !== selectedLga) return;
       resetSelect(wardSelect, 'Unable to load wards');
+      resetSelect(pollingSelect, 'Select a ward first');
       showMessage(`Ward loading failed: ${error.message}`);
       console.error('Ward loading failed:', error);
     }
@@ -161,27 +200,33 @@ document.addEventListener('DOMContentLoaded', () => {
     const lga = cache.lgas.find(item => String(item.id) === String(lgaSelect.value));
     const ward = cache.wards.find(item => String(item.id) === String(wardSelect.value));
 
-    if (!state || !lga || !ward) {
-      resetSelect(pollingSelect, 'Select a ward first');
-      showMessage('Please reselect your state, LGA and ward.');
+    if (!state || !lga || !ward || !state.code || !lga.code || !ward.code) {
+      resetSelect(pollingSelect, 'Unable to identify selected location');
+      showMessage('Please select your state, LGA and ward again.');
+      console.error('[BGA locations] Missing location codes', { state, lga, ward });
       return;
     }
 
+    const selectedState = stateSelect.value;
+    const selectedLga = lgaSelect.value;
     const selectedWard = wardSelect.value;
     showMessage('Loading polling units...');
 
     try {
       const params = new URLSearchParams({
-        state: state.code,
-        lga: lga.code,
-        ward: ward.code
+        state: String(state.code).trim(),
+        lga: String(lga.code).trim(),
+        ward: String(ward.code).trim()
       });
 
-      const records = await fetchRecords(
-        `/api/locations/polling-units?${params.toString()}`
-      );
+      const records = await fetchRecords('/api/locations/polling-units?' + params);
 
-      if (requestId !== wardRequestId || wardSelect.value !== selectedWard) return;
+      if (
+        requestId !== wardRequestId ||
+        stateSelect.value !== selectedState ||
+        lgaSelect.value !== selectedLga ||
+        wardSelect.value !== selectedWard
+      ) return;
 
       fillSelect(
         pollingSelect,
@@ -190,12 +235,13 @@ document.addEventListener('DOMContentLoaded', () => {
       );
 
       showMessage(records.length
-        ? `${records.length} polling units loaded.`
+        ? records.length + ' polling units loaded.'
         : 'No polling units found for this ward.');
     } catch (error) {
+      if (requestId !== wardRequestId) return;
       resetSelect(pollingSelect, 'Unable to load polling units');
-      showMessage(`Polling-unit loading failed: ${error.message}`);
-      console.error('Polling-unit loading failed:', error);
+      showMessage('Polling-unit loading failed: ' + error.message);
+      console.error('[BGA locations] Polling-unit loading failed:', error);
     }
   });
 
@@ -228,8 +274,28 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const response = await fetch('/api/auth/register', { method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'}, body:JSON.stringify(payload) });
       const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.message || 'Registration failed. Please try again.');
-      if (formMessage) formMessage.textContent = result.message || 'Account created. Check your email to verify it.';
+      if (!response.ok) {
+        if (result.code === 'VERIFICATION_REQUIRED') {
+          if (formMessage) {
+            formMessage.textContent =
+              'Your account already exists but is not verified. Do not register again. Go to Login and use Resend Verification Email. If email delivery is unavailable, try again later; your account remains saved.';
+          }
+          return;
+        }
+        throw new Error(result.message || 'Registration failed. Please try again.');
+      }
+      if (formMessage) {
+        formMessage.textContent = result.emailDelivery
+          ? (result.message || 'Account created. Check your email to verify it.')
+          : (result.message || 'Your account has been saved, but the verification email could not be sent. Do not register again. Go to Login and use Resend Verification Email when email service is available.');
+
+        if (!result.emailDelivery) {
+          const loginLink = document.createElement('a');
+          loginLink.href = '/login';
+          loginLink.textContent = ' Go to Login to resend verification';
+          formMessage.appendChild(loginLink);
+        }
+      }
       if (response.ok && result.emailDelivery) form.reset();
     } catch (error) { if (formMessage) formMessage.textContent = error.message || 'Could not create account. Please try again.'; }
     finally { if (button) { button.disabled = false; button.textContent = 'Register Now'; } }

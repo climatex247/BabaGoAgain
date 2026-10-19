@@ -22,7 +22,7 @@ for (const file of [
 assert.ok(fs.existsSync(path.join(root, 'frontend/assets/baba-go-again-tinubu-2027.png')), 'welcome poster missing');
 const registerHtml = fs.readFileSync(path.join(root, 'frontend/register.html'), 'utf8');
 const registerJs = fs.readFileSync(path.join(root, 'frontend/register.js'), 'utf8');
-assert.match(registerHtml, /register\.js\?v=20261016-community1/, 'location-fix cache-buster missing');
+assert.ok(registerHtml.includes('register.js?v=20261019-locationfix10'), 'registration script cache-buster missing');
 assert.match(registerJs, /stateSelect\.disabled\s*=\s*false/, 'state selector must be enabled after loading');
 assert.match(registerJs, /const requestId = \+\+stateRequestId/, 'state changes must invalidate older requests');
 assert.match(registerJs, /resetSelect\(wardSelect, 'Select an LGA first'\)/, 'state change must clear dependent ward selection');
@@ -38,7 +38,7 @@ for (const route of [
 for (const table of ['community_posts','post_comments','community_groups','group_members','community_events','event_attendees','volunteer_applications','wallet_transactions','wallet_payouts'])
   assert.ok(database.includes(`CREATE TABLE IF NOT EXISTS ${table}`), `Missing table: ${table}`);
 assert.match(fs.readFileSync(path.join(root,'frontend/community.html'),'utf8'), /community\.js/);
-assert.match(fs.readFileSync(path.join(root,'frontend/login.js'),'utf8'), /location\.href='\/community'/);
+assert.match(fs.readFileSync(path.join(root,'frontend/login.js'),'utf8'), /location\.href\s*=\s*['\"]\/community['\"]/);
 const walletHtml = fs.readFileSync(path.join(root,'frontend/wallet.html'),'utf8');
 const adminWalletHtml = fs.readFileSync(path.join(root,'frontend/admin-wallet.html'),'utf8');
 const walletServer = fs.readFileSync(path.join(root,'backend/server.js'),'utf8');

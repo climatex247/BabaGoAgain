@@ -79,6 +79,83 @@ function install(app, ctx) {
     await db.run('INSERT INTO bga_admin_audit (id,actor_id,action,target_id,details,created_at) VALUES (?,?,?,?,?,?)', [id(),actor,action,target || null,safe(details,1000),date()]);
   }
 
+
+  app.get('/api/member-profile', async (req, res) => {
+    try {
+      const me = await user(req, res);
+      if (!me) return;
+      const row = await db.get(
+        `SELECT id, full_name AS name, phone, email, address,
+        preferred_language AS preferredLanguage,
+        state_name AS stateName, lga_name AS lgaName,
+        ward_name AS wardName, polling_unit_id AS pollingUnitId,
+        roles_json AS rolesJson, created_at AS joinedAt
+        FROM users WHERE id=? AND status='active' AND email_verified=1`,
+        `CREATE TABLE IF NOT EXISTS bga_community_reports (
+          id TEXT PRIMARY KEY,
+          reporter_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          target_type TEXT NOT NULL CHECK(target_type IN ('post','comment','group','event')),
+          target_id TEXT NOT NULL,
+          reason TEXT NOT NULL,
+          details TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','dismissed','resolved','hidden')),
+          reviewed_by TEXT REFERENCES users(id),
+          reviewed_at TEXT,
+          review_note TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL,
+          UNIQUE(reporter_id,target_type,target_id)
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_bga_reports_queue ON bga_community_reports(status,created_at)`,
+        [me.id]
+      );
+      if (!row) return res.status(403).json({
+        success:false, message:'An active, verified account is required.'
+      });
+      try { row.roles = JSON.parse(row.rolesJson || '[]'); }
+      catch { row.roles = []; }
+      delete row.rolesJson;
+      res.json({success:true, data:row});
+    } catch (e) {
+      console.error('member profile load', e);
+      res.status(500).json({success:false, message:'Could not load your profile.'});
+    }
+  });
+
+  app.put('/api/member-profile', async (req, res) => {
+    try {
+      const me = await user(req, res);
+      if (!me) return;
+      const name = safe(req.body.name, 100);
+      const phone = safe(req.body.phone, 30);
+      const address = safe(req.body.address, 300);
+      const language = safe(req.body.preferredLanguage, 40) || 'English';
+
+      if (name.length < 2)
+        return res.status(400).json({success:false,message:'Enter your full name.'});
+      if (!/^[+0-9 ()-]{7,30}$/.test(phone))
+        return res.status(400).json({success:false,message:'Enter a valid phone number.'});
+      if (address.length < 3)
+        return res.status(400).json({success:false,message:'Enter your address.'});
+      if (!['English','Hausa','Yoruba','Igbo','Pidgin'].includes(language))
+        return res.status(400).json({success:false,message:'Choose a supported language.'});
+
+      const duplicate = await db.get(
+        'SELECT id FROM users WHERE phone=? AND id<>?', [phone, me.id]
+      );
+      if (duplicate)
+        return res.status(409).json({success:false,message:'That phone number is already registered.'});
+
+      await db.run(
+        'UPDATE users SET full_name=?,phone=?,address=?,preferred_language=?,updated_at=? WHERE id=?',
+        [name, phone, address, language, date(), me.id]
+      );
+      res.json({success:true,message:'Profile updated successfully.'});
+    } catch (e) {
+      console.error('member profile update', e);
+      res.status(500).json({success:false,message:'Could not update your profile.'});
+    }
+  });
+
   app.get('/api/members/search', async (req,res) => {try{const me=await user(req,res);if(!me)return;const q=safe(req.query.q,80);if(q.length<2)return res.json({success:true,data:[]});const rows=await db.all("SELECT id,full_name AS name FROM users WHERE id<>? AND status='active' AND email_verified=1 AND full_name LIKE ? ORDER BY full_name LIMIT 20",[me.id,'%'+q.replace(/[%_\\]/g,'')+'%']);res.json({success:true,data:rows});}catch(e){res.status(500).json({success:false,message:'Could not search members.'});}});
 
   app.get('/messages', (req,res) => res.sendFile(path.join(frontendPath,'messages.html')));
@@ -113,15 +190,116 @@ function install(app, ctx) {
     } catch(e) { console.error('conversation create',e); res.status(500).json({success:false,message:'Could not start conversation.'}); }
   });
   app.get('/api/messages/conversations/:id', async (req,res) => {
-    try { const me=await user(req,res);if(!me)return; const membership=await db.get('SELECT 1 AS ok FROM bga_conversation_members WHERE conversation_id=? AND user_id=?',[req.params.id,me.id]);if(!membership)return res.status(404).json({success:false,message:'Conversation not found.'}); const rows=await db.all(`SELECT m.id,m.body,m.created_at AS createdAt,m.sender_id AS senderId,u.full_name AS senderName FROM bga_messages m JOIN users u ON u.id=m.sender_id WHERE m.conversation_id=? ORDER BY m.created_at ASC LIMIT 300`,[req.params.id]);res.json({success:true,data:rows}); }
+    try { const me=await user(req,res);if(!me)return; const membership=await db.get('SELECT 1 AS ok FROM bga_conversation_members WHERE conversation_id=? AND user_id=?',[req.params.id,me.id]);if(!membership)return res.status(404).json({success:false,message:'Conversation not found.'}); await db.run('UPDATE bga_messages SET read_at=? WHERE conversation_id=? AND sender_id<>? AND read_at IS NULL',[date(),req.params.id,me.id]); const rows=await db.all(`SELECT m.id,m.body,m.created_at AS createdAt,m.sender_id AS senderId,m.read_at AS readAt,u.full_name AS senderName FROM bga_messages m JOIN users u ON u.id=m.sender_id WHERE m.conversation_id=? ORDER BY m.created_at ASC LIMIT 300`,[req.params.id]);res.json({success:true,data:rows}); }
     catch(e){console.error('message read',e);res.status(500).json({success:false,message:'Could not load messages.'});}
   });
   app.post('/api/messages/conversations/:id', async (req,res) => {
-    try { const me=await user(req,res);if(!me)return;const body=safe(req.body.body,4000);if(!body)return res.status(400).json({success:false,message:'Message cannot be empty.'});const membership=await db.get('SELECT 1 AS ok FROM bga_conversation_members WHERE conversation_id=? AND user_id=?',[req.params.id,me.id]);if(!membership)return res.status(404).json({success:false,message:'Conversation not found.'});const msg=id(),now=date();await db.transaction(tx=>{tx.run('INSERT INTO bga_messages (id,conversation_id,sender_id,body,created_at) VALUES (?,?,?,?,?)',[msg,req.params.id,me.id,body,now]);tx.run('UPDATE bga_conversations SET updated_at=? WHERE id=?',[now,req.params.id]);});res.status(201).json({success:true,data:{id:msg,body,createdAt:now,senderId:me.id,senderName:me.full_name}}); }
+    try { const me=await user(req,res);if(!me)return;const body=safe(req.body.body,4000);if(!body)return res.status(400).json({success:false,message:'Message cannot be empty.'});const membership=await db.get('SELECT 1 AS ok FROM bga_conversation_members WHERE conversation_id=? AND user_id=?',[req.params.id,me.id]);if(!membership)return res.status(404).json({success:false,message:'Conversation not found.'});const msg=id(),now=date();await db.transaction(tx=>{tx.run('INSERT INTO bga_messages (id,conversation_id,sender_id,body,created_at) VALUES (?,?,?,?,?)',[msg,req.params.id,me.id,body,now]);tx.run('UPDATE bga_conversations SET updated_at=? WHERE id=?',[now,req.params.id]);});try{await db.run("CREATE TABLE IF NOT EXISTS bga_notifications (id TEXT PRIMARY KEY,user_id TEXT NOT NULL,type TEXT NOT NULL DEFAULT 'general',title TEXT NOT NULL,body TEXT NOT NULL DEFAULT '',link TEXT NOT NULL DEFAULT '/notifications',is_read INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,read_at TEXT)");const recipients=await db.all('SELECT user_id AS userId FROM bga_conversation_members WHERE conversation_id=? AND user_id<>?',[req.params.id,me.id]);for(const recipient of recipients){await db.run('INSERT INTO bga_notifications (id,user_id,type,title,body,link,is_read,created_at) VALUES (?,?,?,?,?,?,0,?)',[id(),recipient.userId,'message','New message from '+safe(me.full_name,100),body.slice(0,300),'/messages',now]);}}catch(notificationError){console.error('message notification',notificationError);}res.status(201).json({success:true,data:{id:msg,body,createdAt:now,senderId:me.id,senderName:me.full_name}}); }
     catch(e){console.error('message send',e);res.status(500).json({success:false,message:'Could not send message.'});}
   });
 
-  app.get('/api/public-profiles', async (req,res) => {
+
+  // Baba Go Again notification centre
+  const ensureNotificationTable = async () => db.run(`
+    CREATE TABLE IF NOT EXISTS bga_notifications (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'general',
+      title TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      link TEXT NOT NULL DEFAULT '/notifications',
+      is_read INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      read_at TEXT
+    )
+  `);
+
+  app.get('/notifications', (req,res) =>
+    res.sendFile(path.join(frontendPath,'notifications.html'))
+  );
+
+  app.get('/api/notifications', async (req,res) => {
+    try {
+      const me = await user(req,res);
+      if (!me) return;
+      await ensureNotificationTable();
+      const rows = await db.all(
+        'SELECT id,type,title,body,link,is_read AS isRead,created_at AS createdAt,read_at AS readAt FROM bga_notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 100',
+        [me.id]
+      );
+      const unread = await db.get(
+        'SELECT COUNT(*) AS count FROM bga_notifications WHERE user_id=? AND is_read=0',
+        [me.id]
+      );
+      res.json({success:true,data:rows,unreadCount:unread.count});
+    } catch(e) {
+      console.error('notifications list',e);
+      res.status(500).json({success:false,message:'Could not load notifications.'});
+    }
+  });
+
+  app.post('/api/notifications/read-all', async (req,res) => {
+    try {
+      const me = await user(req,res);
+      if (!me) return;
+      await ensureNotificationTable();
+      await db.run(
+        'UPDATE bga_notifications SET is_read=1,read_at=? WHERE user_id=? AND is_read=0',
+        [date(),me.id]
+      );
+      res.json({success:true,message:'All notifications marked as read.'});
+    } catch(e) {
+      console.error('notifications read all',e);
+      res.status(500).json({success:false,message:'Could not update notifications.'});
+    }
+  });
+
+  app.post('/api/notifications/:id/read', async (req,res) => {
+    try {
+      const me = await user(req,res);
+      if (!me) return;
+      await ensureNotificationTable();
+      const result = await db.run(
+        'UPDATE bga_notifications SET is_read=1,read_at=? WHERE id=? AND user_id=?',
+        [date(),req.params.id,me.id]
+      );
+      res.json({success:true,updated:result.changes>0});
+    } catch(e) {
+      console.error('notification read',e);
+      res.status(500).json({success:false,message:'Could not update notification.'});
+    }
+  });
+
+  app.delete('/api/notifications/:id', async (req,res) => {
+    try {
+      const me = await user(req,res);
+      if (!me) return;
+      await ensureNotificationTable();
+      await db.run(
+        'DELETE FROM bga_notifications WHERE id=? AND user_id=?',
+        [req.params.id,me.id]
+      );
+      res.json({success:true});
+    } catch(e) {
+      console.error('notification delete',e);
+      res.status(500).json({success:false,message:'Could not delete notification.'});
+    }
+  });
+
+  app.delete('/api/notifications', async (req,res) => {
+    try {
+      const me = await user(req,res);
+      if (!me) return;
+      await ensureNotificationTable();
+      await db.run('DELETE FROM bga_notifications WHERE user_id=?',[me.id]);
+      res.json({success:true,message:'Notifications cleared.'});
+    } catch(e) {
+      console.error('notifications clear',e);
+      res.status(500).json({success:false,message:'Could not clear notifications.'});
+    }
+  });
+
+app.get('/api/public-profiles', async (req,res) => {
     try { await ensureSchema(); const category=safe(req.query.category,40);const q=safe(req.query.q,80);let sql=`SELECT p.id,p.user_id AS userId,p.category,p.display_name AS displayName,p.biography,p.evidence_url AS officialLink,p.verified,p.created_at AS createdAt,(SELECT COUNT(*) FROM bga_follows f WHERE f.profile_id=p.id) AS followers FROM bga_public_profiles p WHERE 1=1`;const params=[];if(CATEGORIES.includes(category)){sql+=' AND p.category=?';params.push(category);}if(q){sql+=' AND (p.display_name LIKE ? OR p.biography LIKE ?)';const term='%'+q.replace(/[%_\\]/g,'')+'%';params.push(term,term);}sql+=' ORDER BY p.verified DESC,p.display_name COLLATE NOCASE LIMIT 100';const rows=await db.all(sql,params);res.json({success:true,data:rows}); }
     catch(e){console.error('public profiles list',e);res.status(500).json({success:false,message:'Could not load public profiles.'});}
   });
@@ -183,6 +361,98 @@ function install(app, ctx) {
       const status=e.statusCode|| (failed?413:400);
       if(status>=500) console.error('media upload',e);
       res.status(status).json({success:false,message:e.statusCode===413?'Media exceeds the 500 MB upload limit.':e.statusCode===415?e.message:'Media upload failed. Check the file and retry.'});
+    }
+  });
+
+
+  // Community reporting: members can report content; moderators review reports.
+  app.post('/api/community/reports', async (req,res) => {
+    try {
+      const me = await user(req,res); if (!me) return;
+      const type = safe(req.body.targetType,20);
+      const targetId = safe(req.body.targetId,100);
+      const reason = safe(req.body.reason,60);
+      const details = safe(req.body.details,1000);
+      const reasons = ['spam','harassment','hate_or_threats','misinformation','inappropriate_content','impersonation','other'];
+      if (!['post','comment','group','event'].includes(type) || !targetId || !reasons.includes(reason)) {
+        return res.status(400).json({success:false,message:'Select valid content and a report reason.'});
+      }
+      const tables = {post:'community_posts',comment:'post_comments',group:'community_groups',event:'community_events'};
+      const target = await db.get('SELECT id FROM ' + tables[type] + ' WHERE id=?',[targetId]);
+      if (!target) return res.status(404).json({success:false,message:'The reported content no longer exists.'});
+      if (type === 'post') {
+        const own = await db.get('SELECT user_id AS userId FROM community_posts WHERE id=?',[targetId]);
+        if (String(own.userId) === String(me.id)) return res.status(400).json({success:false,message:'You cannot report your own post.'});
+      }
+      if (type === 'comment') {
+        const own = await db.get('SELECT user_id AS userId FROM post_comments WHERE id=?',[targetId]);
+        if (String(own.userId) === String(me.id)) return res.status(400).json({success:false,message:'You cannot report your own comment.'});
+      }
+      try {
+        await db.run('INSERT INTO bga_community_reports (id,reporter_id,target_type,target_id,reason,details,created_at) VALUES (?,?,?,?,?,?,?)',
+          [id(),me.id,type,targetId,reason,details,date()]);
+      } catch (e) {
+        if (/UNIQUE constraint failed/i.test(String(e.message))) return res.status(409).json({success:false,message:'You have already reported this content.'});
+        throw e;
+      }
+      res.status(201).json({success:true,message:'Report submitted for moderator review.'});
+    } catch(e) {
+      console.error('Community report submission failed:',e);
+      res.status(500).json({success:false,message:'Could not submit report.'});
+    }
+  });
+
+  app.get('/api/admin-center/community-reports', async (req,res) => {
+    try {
+      const me = await requireRole(req,res,['community_moderator']); if (!me) return;
+      const rows = await db.all(`
+        SELECT r.id,r.target_type AS targetType,r.target_id AS targetId,r.reason,r.details,
+          r.status,r.created_at AS createdAt,r.review_note AS reviewNote,
+          reporter.full_name AS reporterName
+        FROM bga_community_reports r
+        JOIN users reporter ON reporter.id=r.reporter_id
+        WHERE r.status='pending'
+        ORDER BY r.created_at ASC LIMIT 200
+      `);
+      res.json({success:true,data:rows});
+    } catch(e) {
+      console.error('Community report queue failed:',e);
+      res.status(500).json({success:false,message:'Could not load reports.'});
+    }
+  });
+
+  app.post('/api/admin-center/community-reports/:id/review', async (req,res) => {
+    try {
+      const me = await requireRole(req,res,['community_moderator']); if (!me) return;
+      const decision = safe(req.body.decision,20);
+      const note = safe(req.body.note,500);
+      if (!['dismiss','resolve','hide'].includes(decision)) {
+        return res.status(400).json({success:false,message:'Choose dismiss, resolve, or hide.'});
+      }
+      const report = await db.get("SELECT * FROM bga_community_reports WHERE id=? AND status='pending'",[req.params.id]);
+      if (!report) return res.status(404).json({success:false,message:'Pending report not found.'});
+      const now = date();
+      await db.transaction(tx => {
+        tx.run("UPDATE bga_community_reports SET status=?,reviewed_by=?,reviewed_at=?,review_note=? WHERE id=? AND status='pending'",
+          [decision==='dismiss'?'dismissed':decision==='hide'?'hidden':'resolved',me.id,now,note,report.id]);
+        if (decision === 'hide' && report.target_type === 'post') {
+          tx.run('DELETE FROM post_comments WHERE post_id=?',[report.target_id]);
+          tx.run('DELETE FROM community_posts WHERE id=?',[report.target_id]);
+        } else if (decision === 'hide' && report.target_type === 'comment') {
+          tx.run('DELETE FROM post_comments WHERE id=?',[report.target_id]);
+        } else if (decision === 'hide' && report.target_type === 'group') {
+          tx.run('DELETE FROM group_members WHERE group_id=?',[report.target_id]);
+          tx.run('DELETE FROM community_groups WHERE id=?',[report.target_id]);
+        } else if (decision === 'hide' && report.target_type === 'event') {
+          tx.run('DELETE FROM event_attendees WHERE event_id=?',[report.target_id]);
+          tx.run('DELETE FROM community_events WHERE id=?',[report.target_id]);
+        }
+      });
+      await audit(me.id,'community_report_'+decision,report.target_id,report.target_type+': '+note);
+      res.json({success:true,message:decision==='hide'?'Report reviewed and content removed.':'Report reviewed.'});
+    } catch(e) {
+      console.error('Community report review failed:',e);
+      res.status(500).json({success:false,message:'Could not review report.'});
     }
   });
 
