@@ -808,133 +808,134 @@ app.post('/api/admin/wallet/payouts/:id/check-status', async (req,res) => {
   } catch(e) { console.error('OPay status check failed:',e.message); res.status(502).json({success:false,message:'Could not confirm the payout status. Do not retry the transfer.'}); }
 });
 
-/* Nigeria electoral geography directory: SQLite-backed endpoints. */
+/* Nigeria electoral geography directory: package-backed endpoints. */
+const nigeriaGeo = require('nigeria-inec-geo');
 
-app.get('/api/locations/states', async (req, res, next) => {
-  try {
-    const data = await db.all(
-      "SELECT portal_id AS id, code, CASE WHEN name = 'FCT' THEN 'ABUJA (FCT)' ELSE name END AS name FROM location_states ORDER BY name"
-    );
-    res.json({ success: true, data });
-  } catch (error) {
-    next(error);
-  }
+const locationStates = nigeriaGeo.states();
+const locationLgas = nigeriaGeo.lgas();
+const locationWards = nigeriaGeo.wards();
+const locationPollingUnits = nigeriaGeo.pollingUnits();
+
+app.get('/api/locations/states', (req, res) => {
+  const data = locationStates.map(s => ({
+    id: s.portal_id,
+    code: s.code,
+    name: s.name === 'FCT' ? 'ABUJA (FCT)' : s.name
+  })).sort((a, b) => a.name.localeCompare(b.name));
+
+  res.json({ success: true, data });
 });
 
-app.get('/api/locations/lgas', async (req, res, next) => {
-  try {
-    const stateId = String(req.query.state || '');
-    const state = await db.get(
-      'SELECT portal_id, code FROM location_states WHERE portal_id = ?',
-      [stateId]
-    );
+app.get('/api/locations/lgas', (req, res) => {
+  const stateId = String(req.query.state || '');
+  const state = locationStates.find(s => s.portal_id === stateId);
 
-    if (!state) {
-      return res.status(400).json({
-        success: false,
-        message: 'Select a valid state.'
-      });
-    }
-
-    const data = await db.all(
-      'SELECT portal_id AS id, code, name FROM location_lgas WHERE state_portal_id = ? ORDER BY name',
-      [state.portal_id]
-    );
-
-    res.json({ success: true, data });
-  } catch (error) {
-    next(error);
+  if (!state) {
+    return res.status(400).json({
+      success: false,
+      message: 'Select a valid state.'
+    });
   }
+
+  const data = locationLgas
+    .filter(lga => lga.state_portal_id === state.portal_id)
+    .map(lga => ({
+      id: lga.portal_id,
+      code: lga.code,
+      name: lga.name
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  res.json({ success: true, data });
 });
 
-app.get('/api/locations/wards', async (req, res, next) => {
-  try {
-    const lgaId = String(req.query.lga || '');
-    const lga = await db.get(
-      'SELECT portal_id FROM location_lgas WHERE portal_id = ?',
-      [lgaId]
-    );
+app.get('/api/locations/wards', (req, res) => {
+  const lgaId = String(req.query.lga || '');
+  const lga = locationLgas.find(item => item.portal_id === lgaId);
 
-    if (!lga) {
-      return res.status(400).json({
-        success: false,
-        message: 'Select a valid local government area.'
-      });
-    }
-
-    const data = await db.all(
-      'SELECT portal_id AS id, code, name FROM location_wards WHERE lga_portal_id = ? ORDER BY name',
-      [lga.portal_id]
-    );
-
-    res.json({ success: true, data });
-  } catch (error) {
-    next(error);
+  if (!lga) {
+    return res.status(400).json({
+      success: false,
+      message: 'Select a valid local government area.'
+    });
   }
+
+  const data = locationWards
+    .filter(ward => ward.lga_portal_id === lga.portal_id)
+    .map(ward => ({
+      id: ward.portal_id,
+      code: ward.code,
+      name: ward.name
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  res.json({ success: true, data });
 });
 
-app.get('/api/locations/polling-units', async (req, res, next) => {
-  try {
-    const stateCode = String(req.query.state || '');
-    const lgaCode = String(req.query.lga || '');
-    const wardCode = String(req.query.ward || '');
+app.get('/api/locations/polling-units', (req, res) => {
+  const stateCode = String(req.query.state || '');
+  const lgaCode = String(req.query.lga || '');
+  const wardCode = String(req.query.ward || '');
 
-    if (
-      !/^\d{2}$/.test(stateCode) ||
-      !/^\d{2}$/.test(lgaCode) ||
-      !/^\d{2}$/.test(wardCode)
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: 'Valid state, LGA, and ward codes are required.'
-      });
-    }
-
-    const state = await db.get(
-      'SELECT code FROM location_states WHERE code = ?',
-      [stateCode]
-    );
-
-    if (!state) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid state code.'
-      });
-    }
-
-    const lga = await db.get(
-      'SELECT code FROM location_lgas WHERE state_code = ? AND code = ?',
-      [stateCode, lgaCode]
-    );
-
-    if (!lga) {
-      return res.status(400).json({
-        success: false,
-        message: 'The selected LGA does not belong to this state.'
-      });
-    }
-
-    const ward = await db.get(
-      'SELECT code FROM location_wards WHERE state_code = ? AND lga_code = ? AND code = ?',
-      [stateCode, lgaCode, wardCode]
-    );
-
-    if (!ward) {
-      return res.status(400).json({
-        success: false,
-        message: 'The selected ward does not belong to this LGA.'
-      });
-    }
-
-    const data = await db.all(
-      'SELECT portal_id AS id, code, name, location, full_code AS fullCode FROM location_polling_units WHERE state_code = ? AND lga_code = ? AND ward_code = ? ORDER BY name',
-      [stateCode, lgaCode, wardCode]
-    );
-
-    res.json({ success: true, data });
-  } catch (error) {
-    next(error);
+  if (
+    !/^\d{2}$/.test(stateCode) ||
+    !/^\d{2}$/.test(lgaCode) ||
+    !/^\d{2}$/.test(wardCode)
+  ) {
+    return res.status(400).json({
+      success: false,
+      message: 'Valid state, LGA, and ward codes are required.'
+    });
   }
+
+  const state = locationStates.find(item => item.code === stateCode);
+  if (!state) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid state code.'
+    });
+  }
+
+  const lga = locationLgas.find(item =>
+    item.state_code === stateCode && item.code === lgaCode
+  );
+
+  if (!lga) {
+    return res.status(400).json({
+      success: false,
+      message: 'The selected LGA does not belong to this state.'
+    });
+  }
+
+  const ward = locationWards.find(item =>
+    item.state_code === stateCode &&
+    item.lga_code === lgaCode &&
+    item.code === wardCode
+  );
+
+  if (!ward) {
+    return res.status(400).json({
+      success: false,
+      message: 'The selected ward does not belong to this LGA.'
+    });
+  }
+
+  const data = locationPollingUnits
+    .filter(unit =>
+      unit.state_code === stateCode &&
+      unit.lga_code === lgaCode &&
+      unit.ward_code === wardCode
+    )
+    .map(unit => ({
+      id: unit.portal_id,
+      code: unit.code,
+      name: unit.name,
+      location: unit.location || '',
+      fullCode: unit.full_code
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  res.json({ success: true, data });
 });
 
 app.use((req, res) => {
