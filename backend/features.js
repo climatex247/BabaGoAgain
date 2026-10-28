@@ -44,7 +44,22 @@ function install(app, ctx) {
         `CREATE TABLE IF NOT EXISTS bga_media_posts (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, media_type TEXT NOT NULL CHECK(media_type IN ('audio','video')), title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', media_url TEXT NOT NULL, mime_type TEXT NOT NULL, bytes INTEGER NOT NULL, created_at TEXT NOT NULL)`,
         `CREATE INDEX IF NOT EXISTS idx_bga_media_created ON bga_media_posts(media_type,created_at)`,
         `CREATE TABLE IF NOT EXISTS bga_admin_roles (user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, role TEXT NOT NULL, granted_by TEXT REFERENCES users(id), granted_at TEXT NOT NULL, PRIMARY KEY(user_id,role))`,
-        `CREATE TABLE IF NOT EXISTS bga_admin_audit (id TEXT PRIMARY KEY, actor_id TEXT NOT NULL REFERENCES users(id), action TEXT NOT NULL, target_id TEXT, details TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL)`
+        `CREATE TABLE IF NOT EXISTS bga_admin_audit (id TEXT PRIMARY KEY, actor_id TEXT NOT NULL REFERENCES users(id), action TEXT NOT NULL, target_id TEXT, details TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL)`,
+        `CREATE TABLE IF NOT EXISTS bga_community_reports (
+          id TEXT PRIMARY KEY,
+          reporter_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          target_type TEXT NOT NULL CHECK(target_type IN ('post','comment','group','event')),
+          target_id TEXT NOT NULL,
+          reason TEXT NOT NULL,
+          details TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','dismissed','resolved','hidden')),
+          reviewed_by TEXT REFERENCES users(id),
+          reviewed_at TEXT,
+          review_note TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL,
+          UNIQUE(reporter_id,target_type,target_id)
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_bga_reports_queue ON bga_community_reports(status,created_at)`
       ];
       for (const sql of statements) await db.run(sql);
       await db.run('CREATE INDEX IF NOT EXISTS idx_bga_profiles_category ON bga_public_profiles(category,verified,display_name)');
@@ -91,21 +106,6 @@ function install(app, ctx) {
         ward_name AS wardName, polling_unit_id AS pollingUnitId,
         roles_json AS rolesJson, created_at AS joinedAt
         FROM users WHERE id=? AND status='active' AND email_verified=1`,
-        `CREATE TABLE IF NOT EXISTS bga_community_reports (
-          id TEXT PRIMARY KEY,
-          reporter_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-          target_type TEXT NOT NULL CHECK(target_type IN ('post','comment','group','event')),
-          target_id TEXT NOT NULL,
-          reason TEXT NOT NULL,
-          details TEXT NOT NULL DEFAULT '',
-          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','dismissed','resolved','hidden')),
-          reviewed_by TEXT REFERENCES users(id),
-          reviewed_at TEXT,
-          review_note TEXT NOT NULL DEFAULT '',
-          created_at TEXT NOT NULL,
-          UNIQUE(reporter_id,target_type,target_id)
-        )`,
-        `CREATE INDEX IF NOT EXISTS idx_bga_reports_queue ON bga_community_reports(status,created_at)`,
         [me.id]
       );
       if (!row) return res.status(403).json({
