@@ -219,9 +219,15 @@ app.post('/api/auth/resend-verification', async (req, res) => {
       return res.json({ success: true, message: generic });
     }
     const user = await db.get(
-      "SELECT id, full_name, email, email_verified, status FROM users WHERE email = ?",
+      "SELECT id, full_name, email, email_verified, status FROM users WHERE lower(email) = lower(?)",
       [email]
     );
+
+    console.info('Verification resend diagnostic:', {
+      accountFound: Boolean(user),
+      emailVerified: user ? Boolean(user.email_verified) : null,
+      status: user ? user.status : null
+    });
 
     if (user && !user.email_verified && user.status === 'pending_verification') {
       const token = crypto.randomBytes(32).toString('hex');
@@ -246,6 +252,7 @@ app.post('/api/auth/resend-verification', async (req, res) => {
         [user.id, tokenHash(token)]
       );
       verificationResendCooldown.set(email, Date.now());
+      console.info('Verification email accepted by provider for eligible account.');
     }
 
     return res.json({ success: true, message: generic });
