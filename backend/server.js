@@ -59,6 +59,8 @@ app.get('/register', (req, res) => {
   res.sendFile(path.join(frontendPath, 'register.html'));
 });
 
+app.get('/ai-guide', (req, res) => res.sendFile(path.join(frontendPath, 'ai-guide.html')));
+
 app.get('/login', (req, res) => {
   res.sendFile(path.join(frontendPath, 'login.html'));
 });

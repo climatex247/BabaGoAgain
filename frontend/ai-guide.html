@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#082b68">
+<title>AI Personal Guide | Baba Go Again</title>
+<link rel="stylesheet" href="/ai-guide.css">
+<script src="/ai-guide.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <a href="/" class="brand">BABA GO AGAIN</a>
+  <a href="/" class="home">← Home</a>
+</header>
+
+<main class="container">
+  <section class="hero">
+    <div class="robot">🤖</div>
+    <p class="eyebrow">YOUR DIGITAL COMPANION</p>
+    <h1>AI Personal Guide</h1>
+    <p>Talk to your guide. Learn how to use Baba Go Again, one step at a time.</p>
+    <span class="status"><i></i> Voice support depends on your browser</span>
+  </section>
+
+  <section class="settings card">
+    <label for="language">Choose your language</label>
+    <select id="language">
+      <option value="en-US">English</option>
+      <option value="ha-NG">Hausa</option>
+      <option value="yo-NG">Yoruba</option>
+      <option value="ig-NG">Igbo</option>
+      <option value="pcm-NG">Nigerian Pidgin</option>
+      <option value="fr-FR">French</option>
+      <option value="ar-SA">Arabic</option>
+    </select>
+    <p class="hint">Voice input and spoken responses depend on your browser and available language support.</p>
+  </section>
+
+  <section class="card">
+    <h2>What can I help you do?</h2>
+    <div class="topics">
+      <button data-topic="register">📝 Create an account</button>
+      <button data-topic="login">🔐 Login and account access</button>
+      <button data-topic="verification">✉️ Verify my email</button>
+      <button data-topic="profile">👤 Manage my profile</button>
+      <button data-topic="audio">🎙️ Upload audio</button>
+      <button data-topic="video">🎬 Upload video</button>
+      <button data-topic="community">🏘️ Use the community</button>
+      <button data-topic="messages">💬 Send messages</button>
+      <button data-topic="public-figures">🌟 Public figures</button>
+      <button data-topic="wallet">💳 Understand my wallet</button>
+      <button data-topic="location">📍 Find my polling unit</button>
+      <button data-topic="security">🛡️ Account security</button>
+    </div>
+  </section>
+
+  <section class="card chat-card">
+    <div class="chat-heading">
+      <h2>Let's talk</h2>
+      <span id="connection">Guide mode</span>
+    </div>
+
+    <div id="chat" class="chat" aria-live="polite">
+      <div class="bubble assistant">
+        Hello! I'm your Baba Go Again guide. Choose a feature above, type your question, or use the microphone if your browser supports voice input. I'll help you understand the next steps.
+      </div>
+    </div>
+
+    <div class="voice-row">
+      <button id="listen" class="voice-button" type="button">🎙️ Speak to me</button>
+      <button id="stop" class="secondary" type="button">⏹ Stop voice</button>
+    </div>
+
+    <form id="chat-form">
+      <label class="sr-only" for="message">Your question</label>
+      <textarea id="message" maxlength="2000" rows="2"
+        placeholder="Type your question here..." required></textarea>
+      <button class="send" type="submit">Send message ➤</button>
+    </form>
+
+    <p id="notice" class="hint" role="status">
+      This guide uses built-in answers and browser voice features. No external AI service is required.
+    </p>
+  </section>
+
+  <section class="privacy">
+    <strong>Your safety matters.</strong>
+    Never tell the guide your password, one-time verification code, or private banking credentials.
+  </section>
+</main>
+
+<footer>
+  Baba Go Again · AI Personal Guide
+</footer>
+</body>
+</html>
