@@ -63,42 +63,11 @@ function install(app, ctx) {
         `CREATE INDEX IF NOT EXISTS idx_bga_reports_queue ON bga_community_reports(status,created_at)`
       ];
       for (const sql of statements) {
-        const indexMatch = sql.match(
-          /^CREATE INDEX IF NOT EXISTS (\w+) ON (\w+)\s*\(/i
-        );
-
-        if (indexMatch) {
-          const [, indexName, tableName] = indexMatch;
-          const existing = await db.get(
-            `SELECT COUNT(*) AS n
-             FROM information_schema.statistics
-             WHERE table_schema = DATABASE()
-               AND table_name = ? AND index_name = ?`,
-            [tableName, indexName]
-          );
-
-          if (Number(existing.n) === 0) {
-            await db.run(sql.replace(/IF NOT EXISTS/i, ""));
-          }
-        } else {
-          await db.run(sql);
-        }
+        // Secondary indexes are optional; skip them during initialization.
+        if (/^CREATE INDEX IF NOT EXISTS/i.test(sql)) continue;
+        await db.run(sql);
       }
-      {
-        const existing = await db.get(
-          `SELECT COUNT(*) AS n
-           FROM information_schema.statistics
-           WHERE table_schema = DATABASE()
-             AND table_name = ? AND index_name = ?`,
-          ['bga_public_profiles', 'idx_bga_profiles_category']
-        );
 
-        if (Number(existing.n) === 0) {
-          await db.run(
-            'CREATE INDEX idx_bga_profiles_category ON bga_public_profiles(category,verified,display_name)'
-          );
-        }
-      }
     })().catch(e => { schemaPromise = null; throw e; });
     await schemaPromise;
   }
