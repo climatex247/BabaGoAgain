@@ -3,6 +3,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const cloudinary = require('cloudinary').v2;
 const { Transform } = require('stream');
 const { pipeline } = require('stream/promises');
 
@@ -61,8 +62,43 @@ function install(app, ctx) {
         )`,
         `CREATE INDEX IF NOT EXISTS idx_bga_reports_queue ON bga_community_reports(status,created_at)`
       ];
-      for (const sql of statements) await db.run(sql);
-      await db.run('CREATE INDEX IF NOT EXISTS idx_bga_profiles_category ON bga_public_profiles(category,verified,display_name)');
+      for (const sql of statements) {
+        const indexMatch = sql.match(
+          /^CREATE INDEX IF NOT EXISTS (\w+) ON (\w+)\s*\(/i
+        );
+
+        if (indexMatch) {
+          const [, indexName, tableName] = indexMatch;
+          const existing = await db.get(
+            `SELECT COUNT(*) AS n
+             FROM information_schema.statistics
+             WHERE table_schema = DATABASE()
+               AND table_name = ? AND index_name = ?`,
+            [tableName, indexName]
+          );
+
+          if (Number(existing.n) === 0) {
+            await db.run(sql.replace(/IF NOT EXISTS/i, ""));
+          }
+        } else {
+          await db.run(sql);
+        }
+      }
+      {
+        const existing = await db.get(
+          `SELECT COUNT(*) AS n
+           FROM information_schema.statistics
+           WHERE table_schema = DATABASE()
+             AND table_name = ? AND index_name = ?`,
+          ['bga_public_profiles', 'idx_bga_profiles_category']
+        );
+
+        if (Number(existing.n) === 0) {
+          await db.run(
+            'CREATE INDEX idx_bga_profiles_category ON bga_public_profiles(category,verified,display_name)'
+          );
+        }
+      }
     })().catch(e => { schemaPromise = null; throw e; });
     await schemaPromise;
   }
@@ -185,7 +221,7 @@ function install(app, ctx) {
       const existing=await db.get(`SELECT a.conversation_id AS id FROM bga_conversation_members a JOIN bga_conversation_members b ON b.conversation_id=a.conversation_id WHERE a.user_id=? AND b.user_id=? AND (SELECT COUNT(*) FROM bga_conversation_members x WHERE x.conversation_id=a.conversation_id)=2 LIMIT 1`,[me.id,target]);
       if(existing)return res.json({success:true,data:{id:existing.id}});
       const conversation=id(),now=date();
-      await db.transaction(tx=>{tx.run('INSERT INTO bga_conversations (id,created_at,updated_at) VALUES (?,?,?)',[conversation,now,now]);tx.run('INSERT INTO bga_conversation_members (conversation_id,user_id,joined_at) VALUES (?,?,?)',[conversation,me.id,now]);tx.run('INSERT INTO bga_conversation_members (conversation_id,user_id,joined_at) VALUES (?,?,?)',[conversation,target,now]);});
+      await db.transaction(async tx =>{await tx.run('INSERT INTO bga_conversations (id,created_at,updated_at) VALUES (?,?,?)',[conversation,now,now]);await tx.run('INSERT INTO bga_conversation_members (conversation_id,user_id,joined_at) VALUES (?,?,?)',[conversation,me.id,now]);await tx.run('INSERT INTO bga_conversation_members (conversation_id,user_id,joined_at) VALUES (?,?,?)',[conversation,target,now]);});
       res.status(201).json({success:true,data:{id:conversation}});
     } catch(e) { console.error('conversation create',e); res.status(500).json({success:false,message:'Could not start conversation.'}); }
   });
@@ -194,7 +230,7 @@ function install(app, ctx) {
     catch(e){console.error('message read',e);res.status(500).json({success:false,message:'Could not load messages.'});}
   });
   app.post('/api/messages/conversations/:id', async (req,res) => {
-    try { const me=await user(req,res);if(!me)return;const body=safe(req.body.body,4000);if(!body)return res.status(400).json({success:false,message:'Message cannot be empty.'});const membership=await db.get('SELECT 1 AS ok FROM bga_conversation_members WHERE conversation_id=? AND user_id=?',[req.params.id,me.id]);if(!membership)return res.status(404).json({success:false,message:'Conversation not found.'});const msg=id(),now=date();await db.transaction(tx=>{tx.run('INSERT INTO bga_messages (id,conversation_id,sender_id,body,created_at) VALUES (?,?,?,?,?)',[msg,req.params.id,me.id,body,now]);tx.run('UPDATE bga_conversations SET updated_at=? WHERE id=?',[now,req.params.id]);});try{await db.run("CREATE TABLE IF NOT EXISTS bga_notifications (id TEXT PRIMARY KEY,user_id TEXT NOT NULL,type TEXT NOT NULL DEFAULT 'general',title TEXT NOT NULL,body TEXT NOT NULL DEFAULT '',link TEXT NOT NULL DEFAULT '/notifications',is_read INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,read_at TEXT)");const recipients=await db.all('SELECT user_id AS userId FROM bga_conversation_members WHERE conversation_id=? AND user_id<>?',[req.params.id,me.id]);for(const recipient of recipients){await db.run('INSERT INTO bga_notifications (id,user_id,type,title,body,link,is_read,created_at) VALUES (?,?,?,?,?,?,0,?)',[id(),recipient.userId,'message','New message from '+safe(me.full_name,100),body.slice(0,300),'/messages',now]);}}catch(notificationError){console.error('message notification',notificationError);}res.status(201).json({success:true,data:{id:msg,body,createdAt:now,senderId:me.id,senderName:me.full_name}}); }
+    try { const me=await user(req,res);if(!me)return;const body=safe(req.body.body,4000);if(!body)return res.status(400).json({success:false,message:'Message cannot be empty.'});const membership=await db.get('SELECT 1 AS ok FROM bga_conversation_members WHERE conversation_id=? AND user_id=?',[req.params.id,me.id]);if(!membership)return res.status(404).json({success:false,message:'Conversation not found.'});const msg=id(),now=date();await db.transaction(async tx =>{await tx.run('INSERT INTO bga_messages (id,conversation_id,sender_id,body,created_at) VALUES (?,?,?,?,?)',[msg,req.params.id,me.id,body,now]);await tx.run('UPDATE bga_conversations SET updated_at=? WHERE id=?',[now,req.params.id]);});try{await db.run("CREATE TABLE IF NOT EXISTS bga_notifications (id TEXT PRIMARY KEY,user_id TEXT NOT NULL,type TEXT NOT NULL DEFAULT 'general',title TEXT NOT NULL,body TEXT NOT NULL DEFAULT '',link TEXT NOT NULL DEFAULT '/notifications',is_read INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,read_at TEXT)");const recipients=await db.all('SELECT user_id AS userId FROM bga_conversation_members WHERE conversation_id=? AND user_id<>?',[req.params.id,me.id]);for(const recipient of recipients){await db.run('INSERT INTO bga_notifications (id,user_id,type,title,body,link,is_read,created_at) VALUES (?,?,?,?,?,?,0,?)',[id(),recipient.userId,'message','New message from '+safe(me.full_name,100),body.slice(0,300),'/messages',now]);}}catch(notificationError){console.error('message notification',notificationError);}res.status(201).json({success:true,data:{id:msg,body,createdAt:now,senderId:me.id,senderName:me.full_name}}); }
     catch(e){console.error('message send',e);res.status(500).json({success:false,message:'Could not send message.'});}
   });
 
@@ -311,58 +347,176 @@ app.get('/api/public-profiles', async (req,res) => {
   app.post('/api/public-profiles/:id/follow', async (req,res) => {try{const me=await user(req,res);if(!me)return;const profile=await db.get('SELECT id,user_id FROM bga_public_profiles WHERE id=?',[req.params.id]);if(!profile)return res.status(404).json({success:false,message:'Profile not found.'});if(profile.user_id===me.id)return res.status(400).json({success:false,message:'You cannot follow your own profile.'});const existing=await db.get('SELECT 1 AS ok FROM bga_follows WHERE follower_id=? AND profile_id=?',[me.id,profile.id]);if(existing){await db.run('DELETE FROM bga_follows WHERE follower_id=? AND profile_id=?',[me.id,profile.id]);return res.json({success:true,following:false});}await db.run('INSERT INTO bga_follows (follower_id,profile_id,created_at) VALUES (?,?,?)',[me.id,profile.id,date()]);res.json({success:true,following:true});}catch(e){console.error('follow',e);res.status(500).json({success:false,message:'Could not update follow status.'});}});
 
   app.get('/api/media', async (req,res) => {try{await ensureSchema();const type=safe(req.query.type,10);if(type&&!['audio','video'].includes(type))return res.status(400).json({success:false,message:'Media type must be audio or video.'});const rows=await db.all(`SELECT m.id,m.media_type AS mediaType,m.title,m.description,m.media_url AS mediaUrl,m.mime_type AS mimeType,m.bytes,m.created_at AS createdAt,u.full_name AS authorName FROM bga_media_posts m JOIN users u ON u.id=m.user_id ${type?'WHERE m.media_type=?':''} ORDER BY m.created_at DESC LIMIT 100`,type?[type]:[]);res.json({success:true,data:rows});}catch(e){console.error('media list',e);res.status(500).json({success:false,message:'Could not load media.'});}});
+
   app.post('/api/media/upload', async (req,res,next) => {
-    try { const me=await user(req,res); if(!me)return; req.bgaMediaUser=me; next(); }
-    catch(e) { res.status(500).json({success:false,message:'Could not authorize upload.'}); }
+    try {
+      const me=await user(req,res);
+      if(!me)return;
+      req.bgaMediaUser=me;
+      next();
+    } catch(e) {
+      res.status(500).json({success:false,message:'Could not authorize upload.'});
+    }
   }, async (req,res) => {
     const me=req.bgaMediaUser;
-    if(!me) return;
-    const type=safe(req.query.type,10), title=safe(req.headers['x-media-title'],120), description=safe(req.headers['x-media-description'],1000), mime=safe(req.headers['content-type'],60).split(';')[0].toLowerCase();
-    if(!['audio','video'].includes(type)||!title) return res.status(400).json({success:false,message:'Provide type=audio or type=video and X-Media-Title header.'});
-    if(type==='audio'&&!mime.startsWith('audio/')) return res.status(400).json({success:false,message:'Audio uploads must use an audio content type.'});
-    if(type==='video'&&!mime.startsWith('video/')) return res.status(400).json({success:false,message:'Video uploads must use a video content type.'});
-    const extMap={'audio/mpeg':'.mp3','audio/wav':'.wav','audio/x-wav':'.wav','audio/ogg':'.ogg','audio/mp4':'.m4a','video/mp4':'.mp4','video/webm':'.webm','audio/webm':'.webm'};
+    if(!me)return;
+
+    const type=safe(req.query.type,10);
+    const title=safe(req.headers['x-media-title'],120);
+    const description=safe(req.headers['x-media-description'],1000);
+    const mime=safe(req.headers['content-type'],60).split(';')[0].toLowerCase();
+
+    if(!['audio','video'].includes(type)||!title)
+      return res.status(400).json({success:false,message:'Provide type=audio or type=video and X-Media-Title header.'});
+
+    if(type==='audio'&&!mime.startsWith('audio/'))
+      return res.status(400).json({success:false,message:'Audio uploads must use an audio content type.'});
+
+    if(type==='video'&&!mime.startsWith('video/'))
+      return res.status(400).json({success:false,message:'Video uploads must use a video content type.'});
+
+    const extMap={
+      'audio/mpeg':'.mp3',
+      'audio/wav':'.wav',
+      'audio/x-wav':'.wav',
+      'audio/ogg':'.ogg',
+      'audio/mp4':'.m4a',
+      'video/mp4':'.mp4',
+      'video/webm':'.webm',
+      'audio/webm':'.webm'
+    };
+
     const ext=extMap[mime];
-    if(!ext) return res.status(415).json({success:false,message:'Unsupported media format. Allowed: MP3, WAV, OGG, M4A, MP4 and WebM.'});
+    if(!ext)
+      return res.status(415).json({success:false,message:'Unsupported media format. Allowed: MP3, WAV, OGG, M4A, MP4 and WebM.'});
+
     const length=Number(req.headers['content-length']||0);
-    if(length>MAX_MEDIA_BYTES) return res.status(413).json({success:false,message:'Media exceeds the 500 MB upload limit.'});
-    let bytes=0, prefix=Buffer.alloc(0), failed=false;
-    await fs.promises.mkdir(mediaDir,{recursive:true});
-    const file=id()+ext, finalPath=path.join(mediaDir,file), tempPath=finalPath+'.uploading';
+    if(length>MAX_MEDIA_BYTES)
+      return res.status(413).json({success:false,message:'Media exceeds the 500 MB upload limit.'});
+
+    const cloudConfig=cloudinary.config();
+    if(!process.env.CLOUDINARY_URL || !cloudConfig.cloud_name || !cloudConfig.api_key || !cloudConfig.api_secret)
+      return res.status(503).json({success:false,message:'Cloud media storage is not configured. Please contact support.'});
+
+    let bytes=0;
+    let prefix=Buffer.alloc(0);
+    let failed=false;
+
     const validator=new Transform({
-      transform(chunk,encoding,callback){
+      transform(chunk,encoding,callback) {
         bytes+=chunk.length;
-        if(bytes>MAX_MEDIA_BYTES){failed=true;return callback(Object.assign(new Error('Media exceeds the 500 MB upload limit.'),{statusCode:413}));}
-        if(prefix.length<32) prefix=Buffer.concat([prefix,chunk.subarray(0,32-prefix.length)]);
+
+        if(bytes>MAX_MEDIA_BYTES) {
+          failed=true;
+          return callback(Object.assign(
+            new Error('Media exceeds the 500 MB upload limit.'),
+            {statusCode:413}
+          ));
+        }
+
+        if(prefix.length<32)
+          prefix=Buffer.concat([prefix,chunk.subarray(0,32-prefix.length)]);
+
         callback(null,chunk);
       },
-      flush(callback){
+
+      flush(callback) {
         let ok=false;
-        if(mime==='audio/mpeg') ok=(prefix.length>3&&prefix.subarray(0,3).toString()==='ID3')||(prefix.length>1&&prefix[0]===0xff&&(prefix[1]&0xe0)===0xe0);
-        else if(mime==='audio/wav'||mime==='audio/x-wav') ok=prefix.length>12&&prefix.subarray(0,4).toString()==='RIFF'&&prefix.subarray(8,12).toString()==='WAVE';
-        else if(mime==='audio/ogg') ok=prefix.length>4&&prefix.subarray(0,4).toString()==='OggS';
-        else if(mime==='audio/mp4'||mime==='video/mp4') ok=prefix.length>12&&prefix.subarray(4,8).toString()==='ftyp';
-        else if(mime==='video/webm'||mime==='audio/webm') ok=prefix.length>4&&prefix.subarray(0,4).equals(Buffer.from([0x1a,0x45,0xdf,0xa3]));
-        if(!ok)return callback(Object.assign(new Error('Unsupported media format or file signature. Allowed: MP3, WAV, OGG, M4A, MP4 and WebM.'),{statusCode:415}));
+
+        if(mime==='audio/mpeg')
+          ok=(prefix.length>3&&prefix.subarray(0,3).toString()==='ID3')||
+             (prefix.length>1&&prefix[0]===0xff&&(prefix[1]&0xe0)===0xe0);
+        else if(mime==='audio/wav'||mime==='audio/x-wav')
+          ok=prefix.length>12&&prefix.subarray(0,4).toString()==='RIFF'&&prefix.subarray(8,12).toString()==='WAVE';
+        else if(mime==='audio/ogg')
+          ok=prefix.length>4&&prefix.subarray(0,4).toString()==='OggS';
+        else if(mime==='audio/mp4'||mime==='video/mp4')
+          ok=prefix.length>12&&prefix.subarray(4,8).toString()==='ftyp';
+        else if(mime==='video/webm'||mime==='audio/webm')
+          ok=prefix.length>4&&prefix.subarray(0,4).equals(Buffer.from([0x1a,0x45,0xdf,0xa3]));
+
+        if(!ok)
+          return callback(Object.assign(
+            new Error('Unsupported media format or file signature.'),
+            {statusCode:415}
+          ));
+
         callback();
       }
     });
+
+    const mediaId=id();
+    let uploaded=null;
+
     try {
-      await pipeline(req,validator,fs.createWriteStream(tempPath,{flags:'wx',mode:0o640}));
-      await fs.promises.rename(tempPath,finalPath);
-      const mediaId=id(),now=date(),url='/uploads/media/'+file;
+      const uploadResult=new Promise((resolve,reject) => {
+        const uploadStream=cloudinary.uploader.upload_chunked_stream({
+          resource_type:'video',
+          folder:'baba-go-again/media',
+          public_id:mediaId,
+          chunk_size:6000000,
+          overwrite:false
+        },(error,result) => {
+          if(error)return reject(error);
+          if(result && result.done===false)return;
+          if(result)return resolve(result);
+          reject(new Error('Cloudinary did not return an upload result.'));
+        });
+
+        pipeline(req,validator,uploadStream).catch(reject);
+      });
+
+      uploaded=await uploadResult;
+
+      if(!uploaded.secure_url||!uploaded.public_id)
+        throw new Error('Cloudinary upload did not return a media URL.');
+
+      const now=date();
+      const url=uploaded.secure_url;
+
       try {
-        await db.run('INSERT INTO bga_media_posts (id,user_id,media_type,title,description,media_url,mime_type,bytes,created_at) VALUES (?,?,?,?,?,?,?,?,?)',[mediaId,me.id,type,title,description,url,mime,bytes,now]);
-      } catch(e) { await fs.promises.unlink(finalPath).catch(()=>{}); throw e; }
-      res.status(201).json({success:true,data:{id:mediaId,mediaType:type,title,description,mediaUrl:url,mimeType:mime,bytes,createdAt:now}});
+        await db.run(
+          'INSERT INTO bga_media_posts (id,user_id,media_type,title,description,media_url,mime_type,bytes,created_at) VALUES (?,?,?,?,?,?,?,?,?)',
+          [mediaId,me.id,type,title,description,url,mime,bytes,now]
+        );
+      } catch(e) {
+        await cloudinary.uploader.destroy(uploaded.public_id,{resource_type:'video'}).catch(()=>{});
+        throw e;
+      }
+
+      return res.status(201).json({
+        success:true,
+        data:{
+          id:mediaId,
+          mediaType:type,
+          title,
+          description,
+          mediaUrl:url,
+          mimeType:mime,
+          bytes,
+          createdAt:now
+        }
+      });
+
     } catch(e) {
-      await fs.promises.unlink(tempPath).catch(()=>{});
       if(res.headersSent)return;
-      const status=e.statusCode|| (failed?413:400);
-      if(status>=500) console.error('media upload',e);
-      res.status(status).json({success:false,message:e.statusCode===413?'Media exceeds the 500 MB upload limit.':e.statusCode===415?e.message:'Media upload failed. Check the file and retry.'});
+
+      const status=e.statusCode||(failed?413:502);
+
+      if(status>=500)
+        console.error('Cloudinary media upload failed:',e.message);
+
+      return res.status(status).json({
+        success:false,
+        message:status===413
+          ?'Media exceeds the 500 MB upload limit.'
+          :status===415
+            ?e.message
+            :'Media upload failed. Please check your connection and Cloudinary storage settings, then retry.'
+      });
     }
   });
+
 
 
   // Community reporting: members can report content; moderators review reports.
@@ -432,20 +586,20 @@ app.get('/api/public-profiles', async (req,res) => {
       const report = await db.get("SELECT * FROM bga_community_reports WHERE id=? AND status='pending'",[req.params.id]);
       if (!report) return res.status(404).json({success:false,message:'Pending report not found.'});
       const now = date();
-      await db.transaction(tx => {
-        tx.run("UPDATE bga_community_reports SET status=?,reviewed_by=?,reviewed_at=?,review_note=? WHERE id=? AND status='pending'",
+      await db.transaction(async tx => {
+        await tx.run("UPDATE bga_community_reports SET status=?,reviewed_by=?,reviewed_at=?,review_note=? WHERE id=? AND status='pending'",
           [decision==='dismiss'?'dismissed':decision==='hide'?'hidden':'resolved',me.id,now,note,report.id]);
         if (decision === 'hide' && report.target_type === 'post') {
-          tx.run('DELETE FROM post_comments WHERE post_id=?',[report.target_id]);
-          tx.run('DELETE FROM community_posts WHERE id=?',[report.target_id]);
+          await tx.run('DELETE FROM post_comments WHERE post_id=?',[report.target_id]);
+          await tx.run('DELETE FROM community_posts WHERE id=?',[report.target_id]);
         } else if (decision === 'hide' && report.target_type === 'comment') {
-          tx.run('DELETE FROM post_comments WHERE id=?',[report.target_id]);
+          await tx.run('DELETE FROM post_comments WHERE id=?',[report.target_id]);
         } else if (decision === 'hide' && report.target_type === 'group') {
-          tx.run('DELETE FROM group_members WHERE group_id=?',[report.target_id]);
-          tx.run('DELETE FROM community_groups WHERE id=?',[report.target_id]);
+          await tx.run('DELETE FROM group_members WHERE group_id=?',[report.target_id]);
+          await tx.run('DELETE FROM community_groups WHERE id=?',[report.target_id]);
         } else if (decision === 'hide' && report.target_type === 'event') {
-          tx.run('DELETE FROM event_attendees WHERE event_id=?',[report.target_id]);
-          tx.run('DELETE FROM community_events WHERE id=?',[report.target_id]);
+          await tx.run('DELETE FROM event_attendees WHERE event_id=?',[report.target_id]);
+          await tx.run('DELETE FROM community_events WHERE id=?',[report.target_id]);
         }
       });
       await audit(me.id,'community_report_'+decision,report.target_id,report.target_type+': '+note);
@@ -458,7 +612,7 @@ app.get('/api/public-profiles', async (req,res) => {
 
   app.get('/api/admin-center/summary', async (req,res) => {try{const me=await requireRole(req,res,['profile_verification','community_moderator','media_moderator','member_support','wallet_admin']);if(!me)return;const r=await roles(me.id);const founder=r.includes('founder');const summary={roles:r,founder};if(founder||r.includes('profile_verification'))summary.pendingProfiles=Number((await db.get("SELECT COUNT(*) AS n FROM bga_profile_applications WHERE status='pending'"))?.n||0);if(founder)summary.administrators=Number((await db.get('SELECT COUNT(DISTINCT user_id) AS n FROM bga_admin_roles'))?.n||0);res.json({success:true,data:summary});}catch(e){console.error('admin summary',e);res.status(500).json({success:false,message:'Could not load administration summary.'});}});
   app.get('/api/admin-center/profile-applications', async (req,res) => {try{const me=await requireRole(req,res,['profile_verification']);if(!me)return;const rows=await db.all(`SELECT a.id,a.user_id AS userId,u.full_name AS memberName,u.email,a.category,a.display_name AS displayName,a.biography,a.evidence_url AS officialLink,a.status,a.created_at AS createdAt FROM bga_profile_applications a JOIN users u ON u.id=a.user_id WHERE a.status='pending' ORDER BY a.created_at ASC LIMIT 100`);res.json({success:true,data:rows});}catch(e){res.status(500).json({success:false,message:'Could not load applications.'});}});
-  app.post('/api/admin-center/profile-applications/:id/review', async (req,res) => {try{const me=await requireRole(req,res,['profile_verification']);if(!me)return;const decision=safe(req.body.decision,20),note=safe(req.body.note,500);if(!['approve','reject'].includes(decision))return res.status(400).json({success:false,message:'Decision must be approve or reject.'});const appRow=await db.get("SELECT * FROM bga_profile_applications WHERE id=? AND status='pending'",[req.params.id]);if(!appRow)return res.status(404).json({success:false,message:'Pending application not found.'});const now=date();await db.transaction(tx=>{tx.run('UPDATE bga_profile_applications SET status=?,reviewed_by=?,reviewed_at=?,review_note=? WHERE id=? AND status=\'pending\'',[decision==='approve'?'approved':'rejected',me.id,now,note,appRow.id]);if(decision==='approve'){const profileId=id();tx.run('INSERT OR REPLACE INTO bga_public_profiles (id,user_id,category,display_name,biography,evidence_url,verified,created_at,updated_at) VALUES (?,?,?,?,?,?,1,?,?)',[profileId,appRow.user_id,appRow.category,appRow.display_name,appRow.biography,appRow.evidence_url,now,now]);}});await audit(me.id,'profile_'+decision,appRow.user_id,note);res.json({success:true,message:decision==='approve'?'Profile approved and verified.':'Application rejected.'});}catch(e){console.error('profile review',e);res.status(500).json({success:false,message:'Could not review profile application.'});}});
+  app.post('/api/admin-center/profile-applications/:id/review', async (req,res) => {try{const me=await requireRole(req,res,['profile_verification']);if(!me)return;const decision=safe(req.body.decision,20),note=safe(req.body.note,500);if(!['approve','reject'].includes(decision))return res.status(400).json({success:false,message:'Decision must be approve or reject.'});const appRow=await db.get("SELECT * FROM bga_profile_applications WHERE id=? AND status='pending'",[req.params.id]);if(!appRow)return res.status(404).json({success:false,message:'Pending application not found.'});const now=date();await db.transaction(async tx =>{await tx.run('UPDATE bga_profile_applications SET status=?,reviewed_by=?,reviewed_at=?,review_note=? WHERE id=? AND status=\'pending\'',[decision==='approve'?'approved':'rejected',me.id,now,note,appRow.id]);if(decision==='approve'){const profileId=id();await tx.run('INSERT OR REPLACE INTO bga_public_profiles (id,user_id,category,display_name,biography,evidence_url,verified,created_at,updated_at) VALUES (?,?,?,?,?,?,1,?,?)',[profileId,appRow.user_id,appRow.category,appRow.display_name,appRow.biography,appRow.evidence_url,now,now]);}});await audit(me.id,'profile_'+decision,appRow.user_id,note);res.json({success:true,message:decision==='approve'?'Profile approved and verified.':'Application rejected.'});}catch(e){console.error('profile review',e);res.status(500).json({success:false,message:'Could not review profile application.'});}});
   app.get('/api/admin-center/administrators', async (req,res) => {try{const me=await requireRole(req,res,[]);if(!me)return;const r=await roles(me.id);if(!r.includes('founder'))return res.status(403).json({success:false,message:'Only the founder can manage administrators.'});const rows=await db.all(`SELECT u.id,u.full_name AS name,u.email,GROUP_CONCAT(ar.role,',') AS roles FROM bga_admin_roles ar JOIN users u ON u.id=ar.user_id GROUP BY u.id ORDER BY u.full_name`);res.json({success:true,data:rows});}catch(e){res.status(500).json({success:false,message:'Could not load administrators.'});}});
   app.post('/api/admin-center/administrators', async (req,res) => {try{const me=await requireRole(req,res,[]);if(!me)return;const myRoles=await roles(me.id);if(!myRoles.includes('founder'))return res.status(403).json({success:false,message:'Only the founder can appoint administrators.'});const email=safe(req.body.email,254).toLowerCase(),role=safe(req.body.role,50);if(!email||!ADMIN_ROLES.includes(role))return res.status(400).json({success:false,message:'Provide a verified member email and a permitted administrator role.'});const target=await db.get("SELECT id FROM users WHERE lower(email)=? AND status='active' AND email_verified=1",[email]);if(!target)return res.status(404).json({success:false,message:'No active, email-verified member matches that email.'});await db.run('INSERT OR IGNORE INTO bga_admin_roles (user_id,role,granted_by,granted_at) VALUES (?,?,?,?)',[target.id,role,me.id,date()]);await audit(me.id,'admin_role_granted',target.id,role);res.status(201).json({success:true,message:'Administrator role granted.'});}catch(e){console.error('appoint admin',e);res.status(500).json({success:false,message:'Could not appoint administrator.'});}});
   app.delete('/api/admin-center/administrators/:userId/:role', async (req,res) => {try{const me=await requireRole(req,res,[]);if(!me)return;const myRoles=await roles(me.id);if(!myRoles.includes('founder'))return res.status(403).json({success:false,message:'Only the founder can remove administrator roles.'});const targetId=safe(req.params.userId,100),role=safe(req.params.role,50);if(role==='founder')return res.status(400).json({success:false,message:'Founder status cannot be removed through this endpoint.'});if(!ADMIN_ROLES.includes(role))return res.status(400).json({success:false,message:'Unknown administrator role.'});const result=await db.run('DELETE FROM bga_admin_roles WHERE user_id=? AND role=?',[targetId,role]);if(!result.changes)return res.status(404).json({success:false,message:'Administrator role not found.'});await audit(me.id,'admin_role_removed',targetId,role);res.json({success:true,message:'Administrator role removed.'});}catch(e){res.status(500).json({success:false,message:'Could not remove administrator role.'});}});
