@@ -1424,12 +1424,16 @@ let shuttingDown = false;
 
 async function start() {
   try {
+    console.log('[STARTUP 1] Testing MySQL connection...');
     await db.ready();
+    console.log('[STARTUP 2] MySQL connection successful.');
     console.log('[DATABASE] MySQL connection verified.');
+    console.log('[STARTUP 3] Checking database identity...');
     const identity = await db.get(
       'SELECT DATABASE() AS databaseName, @@hostname AS serverName'
     );
 
+    console.log('[STARTUP 4] Checking founder account...');
     const account = await db.get(
       `SELECT id, email, email_verified, status
        FROM users
@@ -1447,6 +1451,7 @@ async function start() {
     });
 
 
+    console.log('[STARTUP 5] Opening HTTP server...');
     server = app.listen(PORT, '0.0.0.0', () => {
       console.log('================================');
       console.log('BABA GO AGAIN BACKEND');
