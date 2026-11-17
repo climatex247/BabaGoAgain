@@ -1424,7 +1424,13 @@ let shuttingDown = false;
 
 async function start() {
   try {
-    console.log('[STARTUP 1] Testing MySQL connection...');
+    console.log('[MYSQL HOST CHECK]', JSON.stringify(process.env.MYSQL_HOST), 'length=', (process.env.MYSQL_HOST || '').length);
+      try {
+        console.log('[MYSQL DNS CHECK]', await require('dns').promises.lookup(process.env.MYSQL_HOST));
+      } catch (e) {
+        console.error('[MYSQL DNS CHECK FAILED]', e.code);
+      }
+      console.log('[STARTUP 1] Testing MySQL connection...');
     await db.ready();
     console.log('[STARTUP 2] MySQL connection successful.');
     console.log('[DATABASE] MySQL connection verified.');
