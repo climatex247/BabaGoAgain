@@ -177,7 +177,7 @@ app.get('/forgot-password', (req, res) => {
 app.get('/reset-password', (req, res) => { res.sendFile(path.join(frontendPath, 'reset-password.html')); });
 
 const TOKEN_TTL = 30 * 60 * 1000;
-const RESET_TTL = 30 * 60 * 1000;
+const RESET_TTL = 60 * 60 * 1000;
 const passwordHash = (password, salt = crypto.randomBytes(16).toString('hex')) =>
   new Promise((resolve, reject) => crypto.scrypt(password, salt, 64, (err, key) => err ? reject(err) : resolve(`${salt}:${key.toString('hex')}`)));
 const passwordMatches = async (password, stored) => {
@@ -308,7 +308,7 @@ app.post('/api/auth/register', registerLimiter, async (req, res) => {
 
     try {
       const base = getPublicBaseUrl();
-      await sendEmail(email,'Verify your Baba Go Again account',`Hello ${name}, verify your account using this link: ${base}/verify-email?token=${token}\nThis link expires in 30 minutes.`,`<p>Hello ${name.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))},</p><p>Please verify your Baba Go Again account.</p><p><a href="${base}/verify-email?token=${token}">Verify email address</a></p><p>This link expires in 30 minutes.</p>`);
+      await sendEmail(email,'Verify your Baba Go Again account',`Hello ${name}, verify your account using this link: ${base}/verify-email?token=${token}\nThis link expires in 60 minutes.`,`<p>Hello ${name.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))},</p><p>Please verify your Baba Go Again account.</p><p><a href="${base}/verify-email?token=${token}">Verify email address</a></p><p>This link expires in 60 minutes.</p>`);
     } catch (mailError) {
       console.error('Registration verification email failed:', mailError.message);
       return res.status(201).json({
@@ -449,8 +449,8 @@ app.post('/api/auth/resend-verification', resendVerificationLimiter, async (req,
         await sendEmail(
           email,
           'Verify your Baba Go Again account',
-          'Hello ' + user.full_name + ', verify your account using this link: ' + base + '/verify-email?token=' + token + '\nThis link expires in 30 minutes.',
-          '<p>Please verify your Baba Go Again account.</p><p><a href="' + base + '/verify-email?token=' + token + '">Verify email address</a></p><p>This link expires in 30 minutes.</p>'
+          'Hello ' + user.full_name + ', verify your account using this link: ' + base + '/verify-email?token=' + token + '\nThis link expires in 60 minutes.',
+          '<p>Please verify your Baba Go Again account.</p><p><a href="' + base + '/verify-email?token=' + token + '">Verify email address</a></p><p>This link expires in 60 minutes.</p>'
         );
       } catch (mailError) {
         // Remove only the newly generated token; preserve older valid tokens.
@@ -552,7 +552,7 @@ app.post('/api/auth/forgot-password', forgotPasswordLimiter, async (req,res) => 
       await db.run('DELETE FROM password_reset_tokens WHERE user_id=? AND expires_at<?',[user.id,now]);
       await db.run('INSERT INTO password_reset_tokens (token_hash,user_id,expires_at,created_at) VALUES (?,?,?,?)',[tokenHash(token),user.id,now+RESET_TTL,now]);
       const base=getPublicBaseUrl();
-      await sendEmail(email,'Reset your Baba Go Again password',`Reset your password: ${base}/reset-password?token=${token}\nThis link expires in 30 minutes.`,`<p>Reset your Baba Go Again password.</p><p><a href="${base}/reset-password?token=${token}">Reset password</a></p><p>This link expires in 30 minutes.</p>`);
+      await sendEmail(email,'Reset your Baba Go Again password',`Reset your password: ${base}/reset-password?token=${token}\nThis link expires in 60 minutes.`,`<p>Reset your Baba Go Again password.</p><p><a href="${base}/reset-password?token=${token}">Reset password</a></p><p>This link expires in 60 minutes.</p>`);
       await db.run('DELETE FROM password_reset_tokens WHERE user_id=? AND token_hash<>?',[user.id,tokenHash(token)]);
     }
     return res.json({success:true,message:generic});
