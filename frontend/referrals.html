@@ -18,7 +18,7 @@ button,.ref-button{padding:11px 15px;border:0;border-radius:9px;background:#174a
 #status{min-height:24px;color:#174a91;overflow-wrap:anywhere}.qr-wrap{display:grid;justify-items:center;gap:8px;padding:14px;border:1px dashed #b8cbe3;border-radius:14px;background:#f8fbff}.qr-wrap img{max-width:100%;height:auto}
 @media(max-width:700px){.ref-header{padding:11px 14px;flex-wrap:wrap}.ref-toggle{display:block}.ref-nav{display:none;flex:1 0 100%;flex-direction:column;align-items:stretch;border-top:1px solid #ffffff44;padding-top:8px}.ref-nav.is-open{display:flex}.ref-nav a{padding:12px}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}main{width:calc(100% - 20px);margin:12px auto 36px}}
 </style>
-</head>
+<link rel="stylesheet" href="/app-nav.css?v=20261119-globalnav2"></head>
 <body class="bga-page">
 <header class="ref-header"><a class="ref-brand" href="/">Baba Go Again</a><button class="ref-toggle" id="refMenuToggle" type="button" aria-expanded="false" aria-controls="refNav">☰ Menu</button><nav class="ref-nav" id="refNav"><a href="/dashboard">Dashboard</a><a href="/">Home</a><a href="/referrals" aria-current="page">My Referrals</a><a href="/profile">My Profile</a><a href="/community">Community</a><a href="/messages">Messages</a><a href="/media">Audio &amp; Video</a></nav></header>
 <main>
@@ -51,5 +51,5 @@ button,.ref-button{padding:11px 15px;border:0;border-radius:9px;background:#174a
 </main>
 <script>document.getElementById("refMenuToggle").addEventListener("click",function(){const nav=document.getElementById("refNav");const open=nav.classList.toggle("is-open");this.setAttribute("aria-expanded",String(open));});</script>
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js" defer></script><script src="/referrals.js?v=20261119-referrals2" defer></script>
-</body>
+<script src="/app-nav.js?v=20261119-globalnav2" defer></script></body>
 </html>
