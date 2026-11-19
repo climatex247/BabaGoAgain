@@ -62,15 +62,15 @@ function install(app, ctx) {
         )`,
         `CREATE INDEX IF NOT EXISTS idx_bga_reports_queue ON bga_community_reports(status,created_at)`
       ];
-      // Upgrade media moderation columns on databases created by older releases.
-      try { await db.run("ALTER TABLE bga_media_posts ADD COLUMN moderation_status VARCHAR(20) NOT NULL DEFAULT 'pending'"); } catch (e) { if (!/duplicate|exists|1060|SQLITE_ERROR/i.test(String(e.message))) throw e; }
-      try { await db.run("ALTER TABLE bga_media_posts ADD COLUMN reviewed_by TEXT"); } catch (e) { if (!/duplicate|exists|1060|SQLITE_ERROR/i.test(String(e.message))) throw e; }
-      try { await db.run("ALTER TABLE bga_media_posts ADD COLUMN reviewed_at TEXT"); } catch (e) { if (!/duplicate|exists|1060|SQLITE_ERROR/i.test(String(e.message))) throw e; }
       for (const sql of statements) {
         // Secondary indexes are optional; skip them during initialization.
         if (/^CREATE INDEX IF NOT EXISTS/i.test(sql)) continue;
         await db.run(sql);
       }
+      // Add moderation fields after creating the table (safe for old and new databases).
+      try { await db.run("ALTER TABLE bga_media_posts ADD COLUMN moderation_status VARCHAR(20) NOT NULL DEFAULT 'pending'"); } catch (e) { if (!/duplicate|exists|1060|SQLITE_ERROR/i.test(String(e.message))) throw e; }
+      try { await db.run("ALTER TABLE bga_media_posts ADD COLUMN reviewed_by TEXT"); } catch (e) { if (!/duplicate|exists|1060|SQLITE_ERROR/i.test(String(e.message))) throw e; }
+      try { await db.run("ALTER TABLE bga_media_posts ADD COLUMN reviewed_at TEXT"); } catch (e) { if (!/duplicate|exists|1060|SQLITE_ERROR/i.test(String(e.message))) throw e; }
 
     })().catch(e => { schemaPromise = null; throw e; });
     await schemaPromise;
