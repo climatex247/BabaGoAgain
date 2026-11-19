@@ -4,6 +4,17 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const cloudinary = require('cloudinary').v2;
+
+// Prefer separate Cloudinary credentials. This avoids URL parsing problems when
+// the API secret contains reserved URL characters such as @, :, /, #, or %.
+if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME.trim(),
+    api_key: process.env.CLOUDINARY_API_KEY.trim(),
+    api_secret: process.env.CLOUDINARY_API_SECRET.trim(),
+    secure: true
+  });
+}
 const { Transform } = require('stream');
 const { pipeline } = require('stream/promises');
 
@@ -430,7 +441,7 @@ app.get('/api/public-profiles', async (req,res) => {
       return res.status(413).json({success:false,message:'Media exceeds the 500 MB upload limit.'});
 
     const cloudConfig=cloudinary.config();
-    if(!process.env.CLOUDINARY_URL || !cloudConfig.cloud_name || !cloudConfig.api_key || !cloudConfig.api_secret)
+    if(!cloudConfig.cloud_name || !cloudConfig.api_key || !cloudConfig.api_secret)
       return res.status(503).json({success:false,message:'Cloud media storage is not configured. Please contact support.'});
 
     let bytes=0;
