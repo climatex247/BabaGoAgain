@@ -162,14 +162,14 @@ function createReferralService(db) {
     throw new Error('Could not find an available referral matrix position.');
   }
 
-  async function registerMember(tx, userId, suppliedCode) {
+  async function registerMember(tx, userId, suppliedCode, allowRoot = false) {
     await tx.get(
       'SELECT id FROM bga_referral_matrix_lock WHERE id=1 FOR UPDATE'
     );
 
     const now = new Date().toISOString();
     const code = normalizeCode(suppliedCode);
-    if (!code) {
+    if (!code && !allowRoot) {
       const error = new Error('A referral code is required to register.');
       error.code = 'REFERRAL_CODE_REQUIRED';
       throw error;
