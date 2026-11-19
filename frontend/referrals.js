@@ -35,15 +35,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     copyButton.disabled = false;
     shareButton.disabled = false;
     if (typeof QRCode === 'undefined') {
-      throw new Error('QR generator did not load. You can still copy or share your invitation link.');
+      const fallback = document.createElement('img');
+      fallback.alt = 'Referral QR code';
+      fallback.width = 220; fallback.height = 220;
+      fallback.src = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent(url.toString());
+      fallback.onerror = () => show('Your referral link is ready, but the QR image service could not load. Use Copy link to invite members.', true);
+      qrContainer.replaceChildren(fallback);
+      downloadQrButton.disabled = false;
+    } else {
+      qrContainer.replaceChildren();
+      new QRCode(qrContainer, {
+        text: url.toString(), width: 220, height: 220,
+        colorDark: '#111827', colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.H
+      });
+      downloadQrButton.disabled = false;
     }
-    qrContainer.replaceChildren();
-    new QRCode(qrContainer, {
-      text: url.toString(), width: 220, height: 220,
-      colorDark: '#111827', colorLight: '#ffffff',
-      correctLevel: QRCode.CorrectLevel.H
-    });
-    downloadQrButton.disabled = false;
 
     document.getElementById('directReferrals').textContent = Number(data.directReferrals || 0);
     document.getElementById('verifiedDirectReferrals').textContent = Number(data.verifiedDirectReferrals || 0);
@@ -61,7 +68,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   downloadQrButton.addEventListener('click', () => {
     const image = qrContainer.querySelector('img');
     const canvas = qrContainer.querySelector('canvas');
-    const source = image?.src || canvas?.toDataURL('image/png');
+    const source = canvas?.toDataURL('image/png') || image?.src;
     if (!source) { show('QR code is not ready yet.', true); return; }
     const link = document.createElement('a');
     link.href = source;
