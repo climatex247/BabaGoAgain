@@ -107,6 +107,7 @@ function install(app, ctx) {
   app.get('/api/dashboard/summary', async (req,res) => {
     try {
       const me=await user(req,res); if(!me)return;
+      await bootstrapFounder();
       const memberRoles=await roles(me.id);
       await db.run("SELECT 1");
       const referrals=await db.all(`SELECT u.id,u.full_name AS name,u.email,u.created_at AS joinedAt,u.status,u.email_verified AS emailVerified
