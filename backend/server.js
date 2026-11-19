@@ -176,7 +176,7 @@ app.get('/forgot-password', (req, res) => {
 
 app.get('/reset-password', (req, res) => { res.sendFile(path.join(frontendPath, 'reset-password.html')); });
 
-const TOKEN_TTL = 30 * 60 * 1000;
+const TOKEN_TTL = 60 * 60 * 1000;
 const RESET_TTL = 60 * 60 * 1000;
 const passwordHash = (password, salt = crypto.randomBytes(16).toString('hex')) =>
   new Promise((resolve, reject) => crypto.scrypt(password, salt, 64, (err, key) => err ? reject(err) : resolve(`${salt}:${key.toString('hex')}`)));
@@ -278,7 +278,7 @@ app.post('/api/auth/register', registerLimiter, async (req, res) => {
 
     let referral;
     const token = crypto.randomBytes(32).toString('hex');
-    const expires = Date.now() + 30 * 60 * 1000;
+    const expires = Date.now() + TOKEN_TTL;
 
     await db.transaction(async tx => {
       await tx.run(
@@ -795,6 +795,8 @@ app.get('/api/referrals/me', async (req, res) => {
 
 /* Baba Go Again extended social, media, public-profile and founder-admin features. */
 require('./features').install(app, { db, authenticatedUser, frontendPath });
+
+app.get('/referrals', (req, res) => res.sendFile(path.join(frontendPath, 'referrals.html')));
 
 app.get('/community', (req, res) => res.sendFile(path.join(frontendPath, 'community.html')));
 
