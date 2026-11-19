@@ -8,12 +8,27 @@ document.addEventListener('DOMContentLoaded', () => {
   const pollingSelect = document.getElementById('pollingUnit');
   const locationMessage = document.getElementById('locationMessage');
   const formMessage = document.getElementById('formMessage');
+  const emailInput = document.getElementById('email');
   const referralCodeInput = document.getElementById('referralCode');
   const referralParams = new URLSearchParams(window.location.search);
   const referralFromLink = referralParams.get('ref') || referralParams.get('referral') || '';
   if (referralCodeInput && referralFromLink) {
     referralCodeInput.value = referralFromLink.trim().toUpperCase().slice(0, 32);
   }
+
+  function updateReferralRequirement() {
+    if (!referralCodeInput || !emailInput) return;
+    const isFounder = emailInput.value.trim().toLowerCase() === 'babagoagain@gmail.com';
+    referralCodeInput.required = !isFounder;
+    referralCodeInput.placeholder = isFounder ? 'Founder account — no referral code needed' : 'Enter referral code';
+    const helper = referralCodeInput.parentElement?.querySelector('small');
+    if (helper) helper.textContent = isFounder
+      ? 'The founder account is the root of the referral network and does not need an invitation code.'
+      : 'A referral code is mandatory. Open your inviter’s invitation link or scan their QR code to fill it automatically.';
+  }
+
+  emailInput?.addEventListener('input', updateReferralRequirement);
+  updateReferralRequirement();
 
   if (!form || !stateSelect || !lgaSelect || !wardSelect || !pollingSelect) {
     console.error('Registration form is missing a required location field.');
