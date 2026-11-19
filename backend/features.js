@@ -42,7 +42,7 @@ function install(app, ctx) {
         `CREATE TABLE IF NOT EXISTS bga_profile_applications (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, category TEXT NOT NULL, display_name TEXT NOT NULL, biography TEXT NOT NULL, evidence_url TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')), reviewed_by TEXT REFERENCES users(id), reviewed_at TEXT, review_note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, UNIQUE(user_id))`,
         `CREATE TABLE IF NOT EXISTS bga_public_profiles (id TEXT PRIMARY KEY, user_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE, category TEXT NOT NULL, display_name TEXT NOT NULL, biography TEXT NOT NULL, evidence_url TEXT NOT NULL DEFAULT '', verified INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
         `CREATE TABLE IF NOT EXISTS bga_follows (follower_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, profile_id TEXT NOT NULL REFERENCES bga_public_profiles(id) ON DELETE CASCADE, created_at TEXT NOT NULL, PRIMARY KEY(follower_id,profile_id))`,
-        `CREATE TABLE IF NOT EXISTS bga_media_posts (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, media_type TEXT NOT NULL CHECK(media_type IN ('audio','video')), title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', media_url TEXT NOT NULL, mime_type TEXT NOT NULL, bytes INTEGER NOT NULL, created_at TEXT NOT NULL)`,
+        `CREATE TABLE IF NOT EXISTS bga_media_posts (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, media_type TEXT NOT NULL CHECK(media_type IN ('audio','video')), title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', media_url TEXT NOT NULL, mime_type TEXT NOT NULL, bytes INTEGER NOT NULL, moderation_status VARCHAR(20) NOT NULL DEFAULT 'pending', reviewed_by TEXT, reviewed_at TEXT, created_at TEXT NOT NULL)`,
         `CREATE INDEX IF NOT EXISTS idx_bga_media_created ON bga_media_posts(media_type,created_at)`,
         `CREATE TABLE IF NOT EXISTS bga_admin_roles (user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, role TEXT NOT NULL, granted_by TEXT REFERENCES users(id), granted_at TEXT NOT NULL, PRIMARY KEY(user_id,role))`,
         `CREATE TABLE IF NOT EXISTS bga_admin_audit (id TEXT PRIMARY KEY, actor_id TEXT NOT NULL REFERENCES users(id), action TEXT NOT NULL, target_id TEXT, details TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL)`,
@@ -62,6 +62,10 @@ function install(app, ctx) {
         )`,
         `CREATE INDEX IF NOT EXISTS idx_bga_reports_queue ON bga_community_reports(status,created_at)`
       ];
+      // Upgrade media moderation columns on databases created by older releases.
+      try { await db.run("ALTER TABLE bga_media_posts ADD COLUMN moderation_status VARCHAR(20) NOT NULL DEFAULT 'pending'"); } catch (e) { if (!/duplicate|exists|1060|SQLITE_ERROR/i.test(String(e.message))) throw e; }
+      try { await db.run("ALTER TABLE bga_media_posts ADD COLUMN reviewed_by TEXT"); } catch (e) { if (!/duplicate|exists|1060|SQLITE_ERROR/i.test(String(e.message))) throw e; }
+      try { await db.run("ALTER TABLE bga_media_posts ADD COLUMN reviewed_at TEXT"); } catch (e) { if (!/duplicate|exists|1060|SQLITE_ERROR/i.test(String(e.message))) throw e; }
       for (const sql of statements) {
         // Secondary indexes are optional; skip them during initialization.
         if (/^CREATE INDEX IF NOT EXISTS/i.test(sql)) continue;
@@ -99,6 +103,23 @@ function install(app, ctx) {
     await db.run('INSERT INTO bga_admin_audit (id,actor_id,action,target_id,details,created_at) VALUES (?,?,?,?,?,?)', [id(),actor,action,target || null,safe(details,1000),date()]);
   }
 
+
+  app.get('/api/dashboard/summary', async (req,res) => {
+    try {
+      const me=await user(req,res); if(!me)return;
+      const memberRoles=await roles(me.id);
+      await db.run("SELECT 1");
+      const referrals=await db.all(`SELECT u.id,u.full_name AS name,u.email,u.created_at AS joinedAt,u.status,u.email_verified AS emailVerified
+        FROM bga_referral_relationships r JOIN users u ON u.id=r.user_id
+        WHERE r.sponsor_id=? ORDER BY u.created_at DESC LIMIT 100`,[me.id]);
+      const unread=await db.get(`SELECT COUNT(*) AS n FROM bga_messages m
+        JOIN bga_conversation_members cm ON cm.conversation_id=m.conversation_id
+        WHERE cm.user_id=? AND m.sender_id<>? AND m.read_at IS NULL`,[me.id,me.id]);
+      const pendingMedia=memberRoles.includes('founder')||memberRoles.includes('media_moderator')
+        ? Number((await db.get("SELECT COUNT(*) AS n FROM bga_media_posts WHERE moderation_status='pending'"))?.n||0) : 0;
+      res.json({success:true,data:{name:me.full_name,email:me.email,roles:memberRoles,referralCount:referrals.length,verifiedReferralCount:referrals.filter(x=>x.status==='active'&&Number(x.emailVerified)===1).length,referrals,unreadMessages:Number(unread?.n||0),pendingMedia}});
+    } catch(e) { console.error('dashboard summary',e); res.status(500).json({success:false,message:'Could not load dashboard.'}); }
+  });
 
   app.get('/api/member-profile', async (req, res) => {
     try {
@@ -315,7 +336,26 @@ app.get('/api/public-profiles', async (req,res) => {
   app.get('/api/public-profiles/mine', async (req,res) => {try{const me=await user(req,res);if(!me)return;const profile=await db.get('SELECT id,category,display_name AS displayName,biography,evidence_url AS officialLink,verified FROM bga_public_profiles WHERE user_id=?',[me.id]);const application=await db.get('SELECT status,review_note AS reviewNote,created_at AS createdAt FROM bga_profile_applications WHERE user_id=?',[me.id]);res.json({success:true,data:{profile,application}});}catch(e){res.status(500).json({success:false,message:'Could not load your profile status.'});}});
   app.post('/api/public-profiles/:id/follow', async (req,res) => {try{const me=await user(req,res);if(!me)return;const profile=await db.get('SELECT id,user_id FROM bga_public_profiles WHERE id=?',[req.params.id]);if(!profile)return res.status(404).json({success:false,message:'Profile not found.'});if(profile.user_id===me.id)return res.status(400).json({success:false,message:'You cannot follow your own profile.'});const existing=await db.get('SELECT 1 AS ok FROM bga_follows WHERE follower_id=? AND profile_id=?',[me.id,profile.id]);if(existing){await db.run('DELETE FROM bga_follows WHERE follower_id=? AND profile_id=?',[me.id,profile.id]);return res.json({success:true,following:false});}await db.run('INSERT INTO bga_follows (follower_id,profile_id,created_at) VALUES (?,?,?)',[me.id,profile.id,date()]);res.json({success:true,following:true});}catch(e){console.error('follow',e);res.status(500).json({success:false,message:'Could not update follow status.'});}});
 
-  app.get('/api/media', async (req,res) => {try{await ensureSchema();const type=safe(req.query.type,10);if(type&&!['audio','video'].includes(type))return res.status(400).json({success:false,message:'Media type must be audio or video.'});const rows=await db.all(`SELECT m.id,m.media_type AS mediaType,m.title,m.description,m.media_url AS mediaUrl,m.mime_type AS mimeType,m.bytes,m.created_at AS createdAt,u.full_name AS authorName FROM bga_media_posts m JOIN users u ON u.id=m.user_id ${type?'WHERE m.media_type=?':''} ORDER BY m.created_at DESC LIMIT 100`,type?[type]:[]);res.json({success:true,data:rows});}catch(e){console.error('media list',e);res.status(500).json({success:false,message:'Could not load media.'});}});
+  app.get('/api/media', async (req,res) => {try{await ensureSchema();const type=safe(req.query.type,10);if(type&&!['audio','video'].includes(type))return res.status(400).json({success:false,message:'Media type must be audio or video.'});const rows=await db.all(`SELECT m.id,m.media_type AS mediaType,m.title,m.description,m.media_url AS mediaUrl,m.mime_type AS mimeType,m.bytes,m.created_at AS createdAt,u.full_name AS authorName FROM bga_media_posts m JOIN users u ON u.id=m.user_id WHERE m.moderation_status='approved' ${type?'AND m.media_type=?':''} ORDER BY m.created_at DESC LIMIT 100`,type?[type]:[]);res.json({success:true,data:rows});}catch(e){console.error('media list',e);res.status(500).json({success:false,message:'Could not load media.'});}});
+
+  // Founder/moderator queue: uploaded media remains private until approved.
+  app.get('/api/admin-center/media', async (req,res) => {
+    try { const me=await requireRole(req,res,['media_moderator']); if(!me)return;
+      const rows=await db.all(`SELECT m.id,m.media_type AS mediaType,m.title,m.description,m.media_url AS mediaUrl,m.created_at AS createdAt,u.full_name AS authorName,u.email FROM bga_media_posts m JOIN users u ON u.id=m.user_id WHERE m.moderation_status='pending' ORDER BY m.created_at ASC LIMIT 100`);
+      res.json({success:true,data:rows});
+    } catch(e) { console.error('media moderation queue',e); res.status(500).json({success:false,message:'Could not load pending media.'}); }
+  });
+  app.post('/api/admin-center/media/:id/review', async (req,res) => {
+    try { const me=await requireRole(req,res,['media_moderator']); if(!me)return;
+      const decision=safe(req.body.decision,20);
+      if(!['approve','reject'].includes(decision))return res.status(400).json({success:false,message:'Choose approve or reject.'});
+      const item=await db.get("SELECT id FROM bga_media_posts WHERE id=? AND moderation_status='pending'",[req.params.id]);
+      if(!item)return res.status(404).json({success:false,message:'Pending media was not found.'});
+      await db.run('UPDATE bga_media_posts SET moderation_status=?,reviewed_by=?,reviewed_at=? WHERE id=? AND moderation_status=\'pending\'',[decision==='approve'?'approved':'rejected',me.id,date(),item.id]);
+      await audit(me.id,'media_'+decision,item.id,'Media moderation decision: '+decision);
+      res.json({success:true,message:decision==='approve'?'Media approved and published.':'Media rejected and kept unpublished.'});
+    } catch(e) { console.error('media moderation review',e); res.status(500).json({success:false,message:'Could not review media.'}); }
+  });
 
   app.post('/api/media/upload', async (req,res,next) => {
     try {
@@ -445,8 +485,8 @@ app.get('/api/public-profiles', async (req,res) => {
 
       try {
         await db.run(
-          'INSERT INTO bga_media_posts (id,user_id,media_type,title,description,media_url,mime_type,bytes,created_at) VALUES (?,?,?,?,?,?,?,?,?)',
-          [mediaId,me.id,type,title,description,url,mime,bytes,now]
+          'INSERT INTO bga_media_posts (id,user_id,media_type,title,description,media_url,mime_type,bytes,moderation_status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
+          [mediaId,me.id,type,title,description,url,mime,bytes,'pending',now]
         );
       } catch(e) {
         await cloudinary.uploader.destroy(uploaded.public_id,{resource_type:'video'}).catch(()=>{});
@@ -463,7 +503,8 @@ app.get('/api/public-profiles', async (req,res) => {
           mediaUrl:url,
           mimeType:mime,
           bytes,
-          createdAt:now
+          createdAt:now,
+          moderationStatus:'pending'
         }
       });
 
