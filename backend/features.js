@@ -122,6 +122,30 @@ function install(app, ctx) {
     } catch(e) { console.error('dashboard summary',e); res.status(500).json({success:false,message:'Could not load dashboard.'}); }
   });
 
+  app.get('/api/founder-dashboard/summary', async (req,res) => {
+    try {
+      const me=await requireRole(req,res,[]);
+      if(!me)return;
+      const memberRoles=await roles(me.id);
+      if(!memberRoles.includes('founder'))return res.status(403).json({success:false,message:'Founder access is required.'});
+      if (referrals && typeof referrals.ensureSchema === 'function') await referrals.ensureSchema();
+      await ensureSchema();
+      const counts=await db.get(`SELECT COUNT(*) AS totalMembers,
+        SUM(CASE WHEN status='active' AND email_verified=1 THEN 1 ELSE 0 END) AS verifiedMembers,
+        SUM(CASE WHEN status<>'active' OR email_verified<>1 THEN 1 ELSE 0 END) AS unverifiedMembers
+        FROM users`);
+      const referralCount=await db.get('SELECT COUNT(*) AS n FROM bga_referral_relationships');
+      const adminCount=await db.get("SELECT COUNT(DISTINCT user_id) AS n FROM bga_admin_roles WHERE role<>'founder'");
+      const mediaCount=await db.get("SELECT COUNT(*) AS n FROM bga_media_posts WHERE moderation_status='pending'");
+      const profileCount=await db.get("SELECT COUNT(*) AS n FROM bga_profile_applications WHERE status='pending'");
+      const reportCount=await db.get("SELECT COUNT(*) AS n FROM bga_community_reports WHERE status='pending'");
+      const audit=await db.all(`SELECT a.action,a.details,a.created_at AS createdAt,u.full_name AS actorName
+        FROM bga_admin_audit a JOIN users u ON u.id=a.actor_id
+        ORDER BY a.created_at DESC LIMIT 12`);
+      res.json({success:true,data:{founderName:me.full_name||me.email,totalMembers:Number(counts?.totalMembers||0),verifiedMembers:Number(counts?.verifiedMembers||0),unverifiedMembers:Number(counts?.unverifiedMembers||0),totalReferrals:Number(referralCount?.n||0),administrators:Number(adminCount?.n||0),pendingMedia:Number(mediaCount?.n||0),pendingProfiles:Number(profileCount?.n||0),pendingReports:Number(reportCount?.n||0),recentAudit:audit}});
+    } catch(e) { console.error('founder dashboard summary',e); res.status(500).json({success:false,message:'Could not load founder control centre.'}); }
+  });
+
   app.get('/api/member-profile', async (req, res) => {
     try {
       const me = await user(req, res);
@@ -189,6 +213,7 @@ function install(app, ctx) {
   app.get('/media', (req,res) => res.sendFile(path.join(frontendPath,'media.html')));
   app.get('/public-figures', (req,res) => res.sendFile(path.join(frontendPath,'public-figures.html')));
   app.get('/admin-center', (req,res) => res.sendFile(path.join(frontendPath,'admin-center.html')));
+  app.get('/founder-dashboard', (req,res) => res.sendFile(path.join(frontendPath,'founder-dashboard.html')));
 
   app.get('/api/messages/conversations', async (req,res) => {
     try {
