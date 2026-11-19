@@ -248,6 +248,8 @@ app.post('/api/auth/register', registerLimiter, async (req, res) => {
     const email = safeText(req.body.email, 254).toLowerCase(), address = safeText(req.body.address, 300);
     const password = String(req.body.password || ''), confirmPassword = String(req.body.confirmPassword || '');
     const suppliedReferralCode = safeText(req.body.referralCode, 32).toUpperCase();
+    const founderEmail = safeText(process.env.BGA_FOUNDER_EMAIL || 'babagoagain@gmail.com', 254).toLowerCase();
+    const isFounderRegistration = email === founderEmail;
     const language = safeText(req.body.preferredLanguage || 'English', 60);
     const state = locationById(geo.states(), req.body.state);
     const lga = locationById(geo.lgas(), req.body.lga);
@@ -255,7 +257,7 @@ app.post('/api/auth/register', registerLimiter, async (req, res) => {
     const pu = req.body.pollingUnit ? geo.pollingUnits().find(x => String(x.portal_id) === String(req.body.pollingUnit)) : null;
     const roles = Array.isArray(req.body.roles) ? req.body.roles.map(x => safeText(x, 40)).filter(x => ['Member','Volunteer','Youth Leader','Women Leader','Politician','Coordinator','Other'].includes(x)) : (req.body.roles ? [safeText(req.body.roles,40)] : []);
     if (!name || !phone || !emailPattern.test(email) || !address) return res.status(400).json({ success:false, message:'Complete your name, phone, email and residential address.' });
-    if (!suppliedReferralCode) return res.status(400).json({ success:false, code:'REFERRAL_CODE_REQUIRED', message:'A valid referral code is required to register. Ask the person who invited you for their invitation link or QR code.' });
+    if (!suppliedReferralCode && !isFounderRegistration) return res.status(400).json({ success:false, code:'REFERRAL_CODE_REQUIRED', message:'A valid referral code is required to register. Ask the person who invited you for their invitation link or QR code.' });
     if (password.length < 6 || password.length > 128) return res.status(400).json({ success:false, message:'Password must be between 6 and 128 characters.' });
     if (password !== confirmPassword) return res.status(400).json({ success:false, message:'Passwords do not match.' });
     if (!state || !lga || String(lga.state_portal_id) !== String(state.portal_id) || !ward || String(ward.lga_portal_id) !== String(lga.portal_id)) return res.status(400).json({ success:false, message:'Select a valid State, LGA and Ward in order.' });
@@ -299,7 +301,8 @@ app.post('/api/auth/register', registerLimiter, async (req, res) => {
       referral = await referrals.registerMember(
         tx,
         id,
-        suppliedReferralCode
+        isFounderRegistration ? '' : suppliedReferralCode,
+        isFounderRegistration
       );
 
       await tx.run(
