@@ -31,6 +31,12 @@ button{padding:12px 16px;border:0;border-radius:8px;background:#14532d;color:#ff
 <input class="ref-link" id="referralLink" type="text" readonly value="Loading your referral link…">
 <button id="copyReferral" type="button" disabled>Copy link</button>
 <button id="shareReferral" type="button" disabled>Share link</button>
+<div style="margin-top:22px;text-align:center">
+<h2>Your Referral QR Code</h2>
+<p>Let people scan this code to open your invitation registration link.</p>
+<div id="referralQr" style="display:inline-flex;justify-content:center;align-items:center;background:#fff;padding:14px;border:1px solid #cbd5e1;border-radius:12px;min-width:228px;min-height:228px"></div>
+<p><button id="downloadReferralQr" type="button" disabled>Download QR Code</button></p>
+</div>
 <p id="status" role="status" aria-live="polite"></p>
 </section>
 <section class="card">
@@ -45,6 +51,7 @@ button{padding:12px 16px;border:0;border-radius:8px;background:#14532d;color:#ff
 <p id="matrixParent"></p>
 </section>
 </main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script src="/referrals.js" defer></script>
 </body>
 </html>
