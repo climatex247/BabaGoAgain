@@ -110,7 +110,7 @@ function install(app, ctx) {
       if (referrals && typeof referrals.ensureSchema === 'function') await referrals.ensureSchema();
       await bootstrapFounder();
       const memberRoles=await roles(me.id);
-      const referrals=await db.all(`SELECT u.id,u.full_name AS name,u.email,u.created_at AS joinedAt,u.status,u.email_verified AS emailVerified
+      const invitedMembers=await db.all(`SELECT u.id,u.full_name AS name,u.email,u.created_at AS joinedAt,u.status,u.email_verified AS emailVerified
         FROM bga_referral_relationships r JOIN users u ON u.id=r.user_id
         WHERE r.sponsor_id=? ORDER BY u.created_at DESC LIMIT 100`,[me.id]);
       const unread=await db.get(`SELECT COUNT(*) AS n FROM bga_messages m
@@ -118,7 +118,7 @@ function install(app, ctx) {
         WHERE cm.user_id=? AND m.sender_id<>? AND m.read_at IS NULL`,[me.id,me.id]);
       const pendingMedia=memberRoles.includes('founder')||memberRoles.includes('media_moderator')
         ? Number((await db.get("SELECT COUNT(*) AS n FROM bga_media_posts WHERE moderation_status='pending'"))?.n||0) : 0;
-      res.json({success:true,data:{name:me.full_name,email:me.email,roles:memberRoles,referralCount:referrals.length,verifiedReferralCount:referrals.filter(x=>x.status==='active'&&Number(x.emailVerified)===1).length,referrals,unreadMessages:Number(unread?.n||0),pendingMedia}});
+      res.json({success:true,data:{name:me.full_name,email:me.email,roles:memberRoles,referralCount:invitedMembers.length,verifiedReferralCount:invitedMembers.filter(x=>x.status==='active'&&Number(x.emailVerified)===1).length,referrals:invitedMembers,unreadMessages:Number(unread?.n||0),pendingMedia}});
     } catch(e) { console.error('dashboard summary',e); res.status(500).json({success:false,message:'Could not load dashboard.'}); }
   });
 
