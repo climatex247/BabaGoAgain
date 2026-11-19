@@ -7,6 +7,7 @@ const cors = require('cors');
 const morgan = require('morgan');
 const crypto = require('crypto');
 const db = require('./database-mysql');
+const { initializeCoreSchema } = require('./schema-mysql');
 const opay = require('./opay');
 const path = require('path');
 require('dotenv').config({ path: require('path').join(__dirname, '.env') });
@@ -1431,6 +1432,8 @@ async function start() {
         console.error('[MYSQL DNS CHECK FAILED]', e.code);
       }
       console.log('[STARTUP 1] Testing MySQL connection...');
+    await initializeCoreSchema(db);
+    console.log('[STARTUP] Core MySQL account schema verified.');
     await db.ready();
     console.log('[STARTUP 2] MySQL connection successful.');
     console.log('[DATABASE] MySQL connection verified.');
