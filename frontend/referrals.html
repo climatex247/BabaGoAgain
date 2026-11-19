@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0645ad">
+<title>My Referrals | Baba Go Again</title>
+<link rel="stylesheet" href="/bga-features.css">
+<style>
+body{font-family:Arial,sans-serif;background:#f1f5f9;color:#172033;margin:0}
+header{background:#123c78;color:#fff;padding:18px}
+header a{color:#fff}
+main{max-width:760px;margin:24px auto;padding:0 14px}
+.card{background:#fff;border-radius:12px;padding:20px;margin-bottom:16px}
+.ref-link{width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:8px;font-size:15px}
+button{padding:12px 16px;border:0;border-radius:8px;background:#14532d;color:#fff;font-weight:bold;margin:10px 8px 0 0}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.stat{background:#f8fafc;border-radius:8px;padding:14px}
+.stat strong{display:block;font-size:24px;margin-top:5px}
+#status{min-height:24px}
+@media(max-width:480px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header><strong>Baba Go Again</strong> · <a href="/profile">My Profile</a> · <a href="/community">Community</a></header>
+<main>
+<section class="card">
+<h1>My Referral Link</h1>
+<p>Invite people to join Baba Go Again using your personal link. When they register through it, your referral code is attached to their registration.</p>
+<label for="referralLink">Your invitation link</label>
+<input class="ref-link" id="referralLink" type="text" readonly value="Loading your referral link…">
+<button id="copyReferral" type="button" disabled>Copy link</button>
+<button id="shareReferral" type="button" disabled>Share link</button>
+<p id="status" role="status" aria-live="polite"></p>
+</section>
+<section class="card">
+<h2>Referral summary</h2>
+<div class="grid">
+<div class="stat">Direct referrals<strong id="directReferrals">—</strong></div>
+<div class="stat">Verified direct referrals<strong id="verifiedDirectReferrals">—</strong></div>
+<div class="stat">Members placed below you<strong id="matrixChildren">—</strong></div>
+<div class="stat">Your matrix position<strong id="matrixPosition">—</strong></div>
+</div>
+<p id="sponsor"></p>
+<p id="matrixParent"></p>
+</section>
+</main>
+<script src="/referrals.js" defer></script>
+</body>
+</html>
