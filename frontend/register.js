@@ -8,6 +8,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const pollingSelect = document.getElementById('pollingUnit');
   const locationMessage = document.getElementById('locationMessage');
   const formMessage = document.getElementById('formMessage');
+  const referralCodeInput = document.getElementById('referralCode');
+  const referralParams = new URLSearchParams(window.location.search);
+  const referralFromLink = referralParams.get('ref') || referralParams.get('referral') || '';
+  if (referralCodeInput && referralFromLink) {
+    referralCodeInput.value = referralFromLink.trim().toUpperCase().slice(0, 32);
+  }
 
   if (!form || !stateSelect || !lgaSelect || !wardSelect || !pollingSelect) {
     console.error('Registration form is missing a required location field.');
@@ -268,7 +274,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const ward = cache.wards.find(x => String(x.id) === String(wardSelect.value));
     if (!state || !lga || !ward) { if (formMessage) formMessage.textContent = 'Please select State, LGA and Ward from the loaded lists.'; return; }
     if (values.get('password') !== values.get('confirmPassword')) { if (formMessage) formMessage.textContent = 'Passwords do not match.'; return; }
-    const payload = { name: values.get('name'), phone: values.get('phone'), email: values.get('email'), password: values.get('password'), confirmPassword: values.get('confirmPassword'), address: values.get('address'), preferredLanguage: values.get('preferredLanguage') || 'English', state: state.id, lga: lga.id, ward: ward.id, pollingUnit: values.get('pollingUnit') || '', roles, otherRoleText: values.get('otherRoleText') || '', acceptTerms: values.has('acceptTerms'), acceptPrivacy: values.has('acceptPrivacy') };
+    const payload = { name: values.get('name'), phone: values.get('phone'), email: values.get('email'), password: values.get('password'), confirmPassword: values.get('confirmPassword'), address: values.get('address'), preferredLanguage: values.get('preferredLanguage') || 'English', state: state.id, lga: lga.id, ward: ward.id, pollingUnit: values.get('pollingUnit') || '', roles, otherRoleText: values.get('otherRoleText') || '', referralCode: (referralCodeInput?.value || referralFromLink).trim().toUpperCase(), acceptTerms: values.has('acceptTerms'), acceptPrivacy: values.has('acceptPrivacy') };
     if (button) { button.disabled = true; button.textContent = 'Creating account...'; }
     if (formMessage) formMessage.textContent = '';
     try {
