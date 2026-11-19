@@ -5,6 +5,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const copyButton = document.getElementById('copyReferral');
   const shareButton = document.getElementById('shareReferral');
   const status = document.getElementById('status');
+  const qrContainer = document.getElementById('referralQr');
+  const downloadQrButton = document.getElementById('downloadReferralQr');
 
   function show(message, error = false) {
     status.textContent = message;
@@ -32,6 +34,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     linkInput.value = url.toString();
     copyButton.disabled = false;
     shareButton.disabled = false;
+    if (typeof QRCode === 'undefined') {
+      throw new Error('QR generator did not load. You can still copy or share your invitation link.');
+    }
+    qrContainer.replaceChildren();
+    new QRCode(qrContainer, {
+      text: url.toString(), width: 220, height: 220,
+      colorDark: '#111827', colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.H
+    });
+    downloadQrButton.disabled = false;
 
     document.getElementById('directReferrals').textContent = Number(data.directReferrals || 0);
     document.getElementById('verifiedDirectReferrals').textContent = Number(data.verifiedDirectReferrals || 0);
@@ -45,6 +57,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   } catch (error) {
     show(error.message || 'Could not load referral information.', true);
   }
+
+  downloadQrButton.addEventListener('click', () => {
+    const image = qrContainer.querySelector('img');
+    const canvas = qrContainer.querySelector('canvas');
+    const source = image?.src || canvas?.toDataURL('image/png');
+    if (!source) { show('QR code is not ready yet.', true); return; }
+    const link = document.createElement('a');
+    link.href = source;
+    link.download = 'baba-go-again-referral-qr.png';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    show('Your referral QR code has been downloaded.');
+  });
 
   copyButton.addEventListener('click', async () => {
     try {
