@@ -749,7 +749,7 @@ app.get('/api/referrals/me', async (req, res) => {
     await referrals.ensureSchema();
 
     // Ensure older verified accounts also receive a referral code.
-    await referrals.getOrCreateMemberCode(user.id);
+    const referralCode = await referrals.getOrCreateMemberCode(user.id);
 
     const summary = await db.get(`
       SELECT
@@ -787,7 +787,7 @@ app.get('/api/referrals/me', async (req, res) => {
       });
     }
 
-    return res.json({ success: true, data: summary });
+    return res.json({ success: true, data: { ...summary, referralCode } });
   } catch (error) {
     console.error('Referral summary failed:', error);
     return res.status(500).json({
