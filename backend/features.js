@@ -84,10 +84,10 @@ function install(app, ctx) {
     if (!email) return;
     const founder = await db.get("SELECT id FROM users WHERE lower(email)=? AND status='active' AND email_verified=1", [email]);
     if (!founder) return;
-    const existing = await db.get("SELECT user_id FROM bga_admin_roles WHERE role='founder' LIMIT 1");
+    const existing = await db.get("SELECT user_id FROM bga_admin_roles WHERE user_id=? AND role='founder'", [founder.id]);
     if (!existing) {
       await db.run('INSERT OR IGNORE INTO bga_admin_roles (user_id,role,granted_by,granted_at) VALUES (?,?,?,?)', [founder.id,'founder',founder.id,date()]);
-      await db.run('INSERT INTO bga_admin_audit (id,actor_id,action,target_id,details,created_at) VALUES (?,?,?,?,?,?)', [id(),founder.id,'founder_bootstrap',founder.id,'Founder role bootstrapped from BGA_FOUNDER_EMAIL after verified account became active.',date()]);
+      await db.run('INSERT INTO bga_admin_audit (id,actor_id,action,target_id,details,created_at) VALUES (?,?,?,?,?,?)', [id(),founder.id,'founder_bootstrap',founder.id,'Founder role assigned to the verified account configured in BGA_FOUNDER_EMAIL.',date()]);
     }
   }
   async function requireRole(req, res, allowed) {
