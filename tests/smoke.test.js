@@ -41,7 +41,9 @@ for (const table of ['community_posts','post_comments','community_groups','group
   assert.ok(database.includes(`CREATE TABLE IF NOT EXISTS ${table}`), `Missing table: ${table}`);
 assert.match(fs.readFileSync(path.join(root,'frontend/community.html'),'utf8'), /community\.js/);
 assert.match(fs.readFileSync(path.join(root,'frontend/login.js'),'utf8'), /location\.href\s*=\s*['\"]\/community['\"]/);
-assert.ok(server.includes("app.get('/referrals'"), 'Missing member referral page route');\nconst walletHtml = fs.readFileSync(path.join(root,'frontend/wallet.html'),'utf8');
+assert.ok(server.includes("app.get('/profile'"), 'Missing member profile page route');
+assert.ok(server.includes("app.get('/referrals'"), 'Missing member referral page route');
+const walletHtml = fs.readFileSync(path.join(root,'frontend/wallet.html'),'utf8');
 const adminWalletHtml = fs.readFileSync(path.join(root,'frontend/admin-wallet.html'),'utf8');
 const walletServer = fs.readFileSync(path.join(root,'backend/server.js'),'utf8');
 for (const route of ["app.get('/api/wallet/me'", "app.post('/api/wallet/payouts'", "app.post('/api/admin/wallet/credit'", "app.post('/api/admin/wallet/payouts/:id/approve'", "app.post('/api/admin/wallet/payouts/:id/check-status'"]) assert.ok(walletServer.includes(route), `Missing wallet route: ${route}`);
