@@ -5,24 +5,22 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#0645ad">
 <title>My Referrals | Baba Go Again</title>
-<link rel="stylesheet" href="/bga-features.css">
+<link rel="stylesheet" href="/bga-features.css?v=20261119-referrals2">
 <style>
-body{font-family:Arial,sans-serif;background:#f1f5f9;color:#172033;margin:0}
-header{background:#123c78;color:#fff;padding:18px}
-header a{color:#fff}
-main{max-width:760px;margin:24px auto;padding:0 14px}
-.card{background:#fff;border-radius:12px;padding:20px;margin-bottom:16px}
-.ref-link{width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:8px;font-size:15px}
-button{padding:12px 16px;border:0;border-radius:8px;background:#14532d;color:#fff;font-weight:bold;margin:10px 8px 0 0}
-.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-.stat{background:#f8fafc;border-radius:8px;padding:14px}
-.stat strong{display:block;font-size:24px;margin-top:5px}
-#status{min-height:24px}
-@media(max-width:480px){.grid{grid-template-columns:1fr}}
+*{box-sizing:border-box}body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#eaf2ff;color:#17365d;margin:0}
+.ref-header{position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px max(16px,calc((100% - 1000px)/2));background:#123f7a;color:#fff}
+.ref-brand{font-weight:850;color:#fff;text-decoration:none;font-size:1.1rem}.ref-toggle{display:none;background:#ffffff18;color:#fff;border:1px solid #ffffff66;border-radius:9px;padding:10px 13px;font-weight:700}
+.ref-nav{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.ref-nav a{color:#fff;text-decoration:none;font-weight:700;padding:9px 10px;border-radius:8px}.ref-nav a:hover{background:#ffffff22}
+main{width:min(900px,calc(100% - 28px));margin:20px auto 50px}.card{background:#fff;border:1px solid #d5e2f2;border-radius:16px;padding:clamp(16px,4vw,24px);margin-bottom:16px;box-shadow:0 6px 20px #12345a0a}
+h1,h2{color:#123f7a}.ref-link{width:100%;padding:13px;border:1px solid #b8cbe3;border-radius:9px;font-size:15px;color:#12345a;background:#f8fbff}
+button,.ref-button{padding:11px 15px;border:0;border-radius:9px;background:#174a91;color:#fff;font-weight:750;margin:10px 8px 0 0;cursor:pointer}.ref-button.secondary{background:#e8f0fc;color:#174a91}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.stat{background:#f2f6fd;border:1px solid #e0e9f5;border-radius:12px;padding:14px}.stat strong{display:block;font-size:25px;margin-top:5px;color:#123f7a}
+#status{min-height:24px;color:#174a91;overflow-wrap:anywhere}.qr-wrap{display:grid;justify-items:center;gap:8px;padding:14px;border:1px dashed #b8cbe3;border-radius:14px;background:#f8fbff}.qr-wrap img{max-width:100%;height:auto}
+@media(max-width:700px){.ref-header{padding:11px 14px;flex-wrap:wrap}.ref-toggle{display:block}.ref-nav{display:none;flex:1 0 100%;flex-direction:column;align-items:stretch;border-top:1px solid #ffffff44;padding-top:8px}.ref-nav.is-open{display:flex}.ref-nav a{padding:12px}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}main{width:calc(100% - 20px);margin:12px auto 36px}}
 </style>
 </head>
-<body>
-<header><strong>Baba Go Again</strong> · <a href="/profile">My Profile</a> · <a href="/community">Community</a></header>
+<body class="bga-page">
+<header class="ref-header"><a class="ref-brand" href="/">Baba Go Again</a><button class="ref-toggle" id="refMenuToggle" type="button" aria-expanded="false" aria-controls="refNav">☰ Menu</button><nav class="ref-nav" id="refNav"><a href="/dashboard">Dashboard</a><a href="/">Home</a><a href="/referrals" aria-current="page">My Referrals</a><a href="/profile">My Profile</a><a href="/community">Community</a><a href="/messages">Messages</a><a href="/media">Audio &amp; Video</a></nav></header>
 <main>
 <section class="card">
 <h1>My Referral Link</h1>
@@ -34,7 +32,7 @@ button{padding:12px 16px;border:0;border-radius:8px;background:#14532d;color:#ff
 <div style="margin-top:22px;text-align:center">
 <h2>Your Referral QR Code</h2>
 <p>Let people scan this code to open your invitation registration link.</p>
-<div id="referralQr" style="display:inline-flex;justify-content:center;align-items:center;background:#fff;padding:14px;border:1px solid #cbd5e1;border-radius:12px;min-width:228px;min-height:228px"></div>
+<div id="referralQr" class="qr-wrap" style="min-width:228px;min-height:228px"></div>
 <p><button id="downloadReferralQr" type="button" disabled>Download QR Code</button></p>
 </div>
 <p id="status" role="status" aria-live="polite"></p>
@@ -51,7 +49,7 @@ button{padding:12px 16px;border:0;border-radius:8px;background:#14532d;color:#ff
 <p id="matrixParent"></p>
 </section>
 </main>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
-<script src="/referrals.js" defer></script>
+<script>document.getElementById("refMenuToggle").addEventListener("click",function(){const nav=document.getElementById("refNav");const open=nav.classList.toggle("is-open");this.setAttribute("aria-expanded",String(open));});</script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js" defer></script><script src="/referrals.js?v=20261119-referrals2" defer></script>
 </body>
 </html>
