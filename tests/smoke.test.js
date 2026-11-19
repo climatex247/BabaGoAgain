@@ -8,7 +8,7 @@ const root = path.resolve(__dirname, '..');
 for (const file of [
   'backend/server.js', 'backend/database.js', 'backend/opay.js', 'frontend/register.js', 'frontend/wallet.js', 'frontend/admin-wallet.js',
   'frontend/community.js', 'frontend/login.js', 'frontend/forgot-password.js',
-  'frontend/profile-photo.js', 'frontend/reset-password.js'
+  'frontend/profile-photo.js', 'frontend/reset-password.js', 'frontend/referrals.js'
 ]) {
   const result = spawnSync(process.execPath, ['--check', path.join(root, file)], { encoding: 'utf8' });
   assert.equal(result.status, 0, `${file}: ${result.stderr}`);
@@ -16,7 +16,7 @@ for (const file of [
 
 for (const file of [
   'frontend/index.html', 'frontend/register.html', 'frontend/community.html', 'frontend/community.css', 'frontend/wallet.html', 'frontend/admin-wallet.html', 'frontend/login.html',
-  'frontend/forgot-password.html', 'frontend/reset-password.html'
+  'frontend/forgot-password.html', 'frontend/reset-password.html', 'frontend/referrals.html'
 ]) assert.ok(fs.existsSync(path.join(root, file)), `${file} missing`);
 
 assert.ok(fs.existsSync(path.join(root, 'frontend/assets/baba-go-again-tinubu-2027.png')), 'welcome poster missing');
@@ -27,6 +27,8 @@ assert.match(registerJs, /stateSelect\.disabled\s*=\s*false/, 'state selector mu
 assert.match(registerJs, /const requestId = \+\+stateRequestId/, 'state changes must invalidate older requests');
 assert.match(registerJs, /resetSelect\(wardSelect, 'Select an LGA first'\)/, 'state change must clear dependent ward selection');
 assert.match(registerJs, /resetSelect\(pollingSelect, 'Select a ward first'\)/, 'state change must clear dependent polling unit');
+assert.match(registerJs, /referralCode:\s*\(referralCodeInput/, 'registration must submit referral code');
+assert.match(registerJs, /referralParams\.get\('ref'\)/, 'registration must read referral links');
 const server = fs.readFileSync(path.join(root, 'backend/server.js'), 'utf8');
 const database = fs.readFileSync(path.join(root, 'backend/database.js'), 'utf8');
 for (const route of [
@@ -39,7 +41,7 @@ for (const table of ['community_posts','post_comments','community_groups','group
   assert.ok(database.includes(`CREATE TABLE IF NOT EXISTS ${table}`), `Missing table: ${table}`);
 assert.match(fs.readFileSync(path.join(root,'frontend/community.html'),'utf8'), /community\.js/);
 assert.match(fs.readFileSync(path.join(root,'frontend/login.js'),'utf8'), /location\.href\s*=\s*['\"]\/community['\"]/);
-const walletHtml = fs.readFileSync(path.join(root,'frontend/wallet.html'),'utf8');
+assert.ok(server.includes("app.get('/referrals'"), 'Missing member referral page route');\nconst walletHtml = fs.readFileSync(path.join(root,'frontend/wallet.html'),'utf8');
 const adminWalletHtml = fs.readFileSync(path.join(root,'frontend/admin-wallet.html'),'utf8');
 const walletServer = fs.readFileSync(path.join(root,'backend/server.js'),'utf8');
 for (const route of ["app.get('/api/wallet/me'", "app.post('/api/wallet/payouts'", "app.post('/api/admin/wallet/credit'", "app.post('/api/admin/wallet/payouts/:id/approve'", "app.post('/api/admin/wallet/payouts/:id/check-status'"]) assert.ok(walletServer.includes(route), `Missing wallet route: ${route}`);
