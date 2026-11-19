@@ -169,6 +169,11 @@ function createReferralService(db) {
 
     const now = new Date().toISOString();
     const code = normalizeCode(suppliedCode);
+    if (!code) {
+      const error = new Error('A referral code is required to register.');
+      error.code = 'REFERRAL_CODE_REQUIRED';
+      throw error;
+    }
 
     let sponsorId = null;
     let placement = null;
