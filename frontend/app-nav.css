@@ -2,3 +2,4 @@
 .bga-global-nav .nav-logout{color:#fff;background:#a52b36;border:0;border-radius:8px;padding:9px 11px;font:inherit;font-weight:800;cursor:pointer}@media(max-width:850px){.bga-global-nav .nav-logout{width:100%;text-align:left;padding:12px 13px;background:transparent;border-top:1px solid #ffffff33;border-radius:0}}
 /* Keep legacy navigation nodes in the DOM for page scripts, but show only the shared menu. */
 body>header:not(.bga-global-nav){display:none!important}
+body>nav.bga-feature-nav{display:none!important}
