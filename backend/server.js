@@ -801,6 +801,7 @@ app.get('/api/referrals/me', async (req, res) => {
 /* Baba Go Again extended social, media, public-profile and founder-admin features. */
 require('./features').install(app, { db, authenticatedUser, frontendPath });
 
+app.get('/dashboard', (req,res) => res.sendFile(path.join(frontendPath,'dashboard.html')));
 app.get('/profile', (req, res) => res.sendFile(path.join(frontendPath, 'profile.html')));
 app.get('/referrals', (req, res) => res.sendFile(path.join(frontendPath, 'referrals.html')));
 
