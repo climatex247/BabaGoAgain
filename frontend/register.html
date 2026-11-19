@@ -33,10 +33,10 @@
 
     <form id="registerForm" class="registration-card">
       <div class="form-field">
-        <label for="referralCode">Referral code (optional)</label>
+        <label for="referralCode">Referral code *</label>
         <input id="referralCode" name="referralCode" type="text"
-               maxlength="32" autocomplete="off" placeholder="Enter referral code">
-        <small>If someone invited you, their referral code will be filled in automatically from their invitation link.</small>
+               maxlength="32" autocomplete="off" placeholder="Enter referral code" required>
+        <small>Registration is by invitation only. Scan your inviter’s QR code or open their invitation link; the code will fill in automatically.</small>
       </div>
 
 <!-- BABA GO AGAIN LANGUAGE SELECTOR START -->
@@ -185,7 +185,7 @@
               name="confirmPassword"
               type="password"
               autocomplete="new-password"
-              minlength="12"
+              minlength="6"
               maxlength="128"
               required
             >
