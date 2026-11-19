@@ -27,7 +27,7 @@ function validMedia(buffer, mime) {
 }
 
 function install(app, ctx) {
-  const { db, authenticatedUser, frontendPath } = ctx;
+  const { db, authenticatedUser, frontendPath, referrals } = ctx;
   const mediaDir = path.join(frontendPath, 'uploads', 'media');
   let schemaPromise;
 
@@ -107,9 +107,9 @@ function install(app, ctx) {
   app.get('/api/dashboard/summary', async (req,res) => {
     try {
       const me=await user(req,res); if(!me)return;
+      if (referrals && typeof referrals.ensureSchema === 'function') await referrals.ensureSchema();
       await bootstrapFounder();
       const memberRoles=await roles(me.id);
-      await db.run("SELECT 1");
       const referrals=await db.all(`SELECT u.id,u.full_name AS name,u.email,u.created_at AS joinedAt,u.status,u.email_verified AS emailVerified
         FROM bga_referral_relationships r JOIN users u ON u.id=r.user_id
         WHERE r.sponsor_id=? ORDER BY u.created_at DESC LIMIT 100`,[me.id]);
