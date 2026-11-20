@@ -5,15 +5,6 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env.mysql') });
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
-// Prefer the three separate Cloudinary credentials over a legacy URL.
-if (
-  process.env.CLOUDINARY_CLOUD_NAME &&
-  process.env.CLOUDINARY_API_KEY &&
-  process.env.CLOUDINARY_API_SECRET
-) {
-  delete process.env.CLOUDINARY_URL;
-}
-
 const express = require('express');
 const helmet = require('helmet');
 const { rateLimit } = require('express-rate-limit');
@@ -23,6 +14,11 @@ const crypto = require('crypto');
 const db = require('./database-mysql');
 const { initializeCoreSchema } = require('./schema-mysql');
 const opay = require('./opay');
+
+// database-mysql loads .env.mysql again; remove any legacy URL AFTER
+// all dotenv-loading application imports and BEFORE Cloudinary is required.
+delete process.env.CLOUDINARY_URL;
+
 const cloudinary = require('cloudinary').v2;
 
 cloudinary.config({
