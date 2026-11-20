@@ -32,6 +32,12 @@ cloudinary.config({
   secure: true
 });
 
+console.log('[Cloudinary startup diagnostic]', {
+  cloudNamePresent: Boolean(cloudinary.config().cloud_name),
+  apiKeyPresent: Boolean(cloudinary.config().api_key),
+  apiSecretPresent: Boolean(cloudinary.config().api_secret)
+});
+
 const { createReferralService } = require('./referrals');
 const referrals = createReferralService(db);
 
@@ -820,7 +826,7 @@ app.get('/api/referrals/me', async (req, res) => {
 
 
 /* Baba Go Again extended social, media, public-profile and founder-admin features. */
-require('./features').install(app, { db, authenticatedUser, frontendPath, referrals });
+require('./features').install(app, { db, authenticatedUser, frontendPath, referrals, cloudinary });
 
 app.get('/dashboard', (req,res) => res.sendFile(path.join(frontendPath,'dashboard.html')));
 app.get('/profile', (req, res) => res.sendFile(path.join(frontendPath, 'profile.html')));

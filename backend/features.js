@@ -3,18 +3,6 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const cloudinary = require('cloudinary').v2;
-
-// Prefer separate Cloudinary credentials. This avoids URL parsing problems when
-// the API secret contains reserved URL characters such as @, :, /, #, or %.
-if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
-  cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME.trim(),
-    api_key: process.env.CLOUDINARY_API_KEY.trim(),
-    api_secret: process.env.CLOUDINARY_API_SECRET.trim(),
-    secure: true
-  });
-}
 const { Transform } = require('stream');
 const { pipeline } = require('stream/promises');
 
@@ -38,7 +26,7 @@ function validMedia(buffer, mime) {
 }
 
 function install(app, ctx) {
-  const { db, authenticatedUser, frontendPath, referrals } = ctx;
+  const { db, authenticatedUser, frontendPath, referrals, cloudinary } = ctx;
   const mediaDir = path.join(frontendPath, 'uploads', 'media');
   let schemaPromise;
 
