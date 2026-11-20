@@ -12,6 +12,13 @@ const opay = require('./opay');
 const path = require('path');
 require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 
+if (
+  process.env.CLOUDINARY_CLOUD_NAME &&
+  process.env.CLOUDINARY_API_KEY &&
+  process.env.CLOUDINARY_API_SECRET
+) {
+  delete process.env.CLOUDINARY_URL;
+}
 const cloudinary = require('cloudinary').v2;
 
 cloudinary.config({
