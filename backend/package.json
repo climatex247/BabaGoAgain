@@ -24,6 +24,7 @@
     "morgan": "^1.12.1",
     "mysql2": "^3.24.6",
     "nigeria-inec-geo": "^1.0.0",
-    "sql.js": "^1.13.0"
+    "sql.js": "^1.13.0",
+    "@imagekit/nodejs": "^7.15.0"
   }
 }
