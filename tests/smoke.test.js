@@ -22,7 +22,7 @@ for (const file of [
 assert.ok(fs.existsSync(path.join(root, 'frontend/assets/baba-go-again-tinubu-2027.png')), 'welcome poster missing');
 const registerHtml = fs.readFileSync(path.join(root, 'frontend/register.html'), 'utf8');
 const registerJs = fs.readFileSync(path.join(root, 'frontend/register.js'), 'utf8');
-assert.ok(registerHtml.includes('register.js?v=20261019-locationfix10'), 'registration script cache-buster missing');
+assert.ok(registerHtml.includes('register.js?v=20261119-referralroot1'), 'registration script cache-buster missing');
 assert.match(registerJs, /stateSelect\.disabled\s*=\s*false/, 'state selector must be enabled after loading');
 assert.match(registerJs, /const requestId = \+\+stateRequestId/, 'state changes must invalidate older requests');
 assert.match(registerJs, /resetSelect\(wardSelect, 'Select an LGA first'\)/, 'state change must clear dependent ward selection');
