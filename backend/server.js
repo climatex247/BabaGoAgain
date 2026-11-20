@@ -5,14 +5,9 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env.mysql') });
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
-// Prefer the three separate Cloudinary credentials over a legacy URL.
-if (
-  process.env.CLOUDINARY_CLOUD_NAME &&
-  process.env.CLOUDINARY_API_KEY &&
-  process.env.CLOUDINARY_API_SECRET
-) {
-  delete process.env.CLOUDINARY_URL;
-}
+// This app uses the three separate Cloudinary credentials.
+// Remove any stale or malformed legacy URL before Cloudinary is imported.
+delete process.env.CLOUDINARY_URL;
 
 const express = require('express');
 const helmet = require('helmet');
