@@ -25,17 +25,35 @@ const { initializeCoreSchema } = require('./schema-mysql');
 const opay = require('./opay');
 const cloudinary = require('cloudinary').v2;
 
+// Support both CLOUDINARY_URL and three separate credentials.
+let urlConfig = {};
+
+if (process.env.CLOUDINARY_URL) {
+  try {
+    const parsed = new URL(process.env.CLOUDINARY_URL);
+    urlConfig = {
+      cloud_name: parsed.hostname,
+      api_key: decodeURIComponent(parsed.username),
+      api_secret: decodeURIComponent(parsed.password)
+    };
+  } catch (error) {
+    console.error('[Cloudinary] CLOUDINARY_URL could not be parsed.');
+  }
+}
+
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || urlConfig.cloud_name,
+  api_key: process.env.CLOUDINARY_API_KEY || urlConfig.api_key,
+  api_secret: process.env.CLOUDINARY_API_SECRET || urlConfig.api_secret,
   secure: true
 });
 
+const cloudConfig = cloudinary.config();
+
 console.log('[Cloudinary startup diagnostic]', {
-  cloudNamePresent: Boolean(cloudinary.config().cloud_name),
-  apiKeyPresent: Boolean(cloudinary.config().api_key),
-  apiSecretPresent: Boolean(cloudinary.config().api_secret)
+  cloudNamePresent: Boolean(cloudConfig.cloud_name),
+  apiKeyPresent: Boolean(cloudConfig.api_key),
+  apiSecretPresent: Boolean(cloudConfig.api_secret)
 });
 
 const { createReferralService } = require('./referrals');
