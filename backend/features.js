@@ -53,6 +53,7 @@ function install(app, ctx) {
         `CREATE TABLE IF NOT EXISTS bga_public_profiles (id TEXT PRIMARY KEY, user_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE, category TEXT NOT NULL, display_name TEXT NOT NULL, biography TEXT NOT NULL, evidence_url TEXT NOT NULL DEFAULT '', verified INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
         `CREATE TABLE IF NOT EXISTS bga_follows (follower_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, profile_id TEXT NOT NULL REFERENCES bga_public_profiles(id) ON DELETE CASCADE, created_at TEXT NOT NULL, PRIMARY KEY(follower_id,profile_id))`,
         `CREATE TABLE IF NOT EXISTS bga_media_posts (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, media_type TEXT NOT NULL CHECK(media_type IN ('audio','video')), title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', media_url TEXT NOT NULL, mime_type TEXT NOT NULL, bytes INTEGER NOT NULL, moderation_status VARCHAR(20) NOT NULL DEFAULT 'pending', reviewed_by TEXT, reviewed_at TEXT, created_at TEXT NOT NULL)`,
+        `CREATE TABLE IF NOT EXISTS bga_media_upload_intents (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, media_type TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', mime_type TEXT NOT NULL, expires_at TEXT NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL)`,
         `CREATE INDEX IF NOT EXISTS idx_bga_media_created ON bga_media_posts(media_type,created_at)`,
         `CREATE TABLE IF NOT EXISTS bga_admin_roles (user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, role TEXT NOT NULL, granted_by TEXT REFERENCES users(id), granted_at TEXT NOT NULL, PRIMARY KEY(user_id,role))`,
         `CREATE TABLE IF NOT EXISTS bga_admin_audit (id TEXT PRIMARY KEY, actor_id TEXT NOT NULL REFERENCES users(id), action TEXT NOT NULL, target_id TEXT, details TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL)`,
@@ -393,163 +394,96 @@ app.get('/api/public-profiles', async (req,res) => {
     } catch(e) { console.error('media moderation review',e); res.status(500).json({success:false,message:'Could not review media.'}); }
   });
 
-  app.post('/api/media/upload', async (req,res,next) => {
+  app.post('/api/media/upload-auth', async (req,res) => {
     try {
-      const me=await user(req,res);
-      if(!me)return;
-      req.bgaMediaUser=me;
-      next();
-    } catch(e) {
-      res.status(500).json({success:false,message:'Could not authorize upload.'});
-    }
-  }, async (req,res) => {
-    const me=req.bgaMediaUser;
-    if(!me)return;
-
-    const type=safe(req.query.type,10);
-    const title=safe(req.headers['x-media-title'],120);
-    const description=safe(req.headers['x-media-description'],1000);
-    const mime=safe(req.headers['content-type'],60).split(';')[0].toLowerCase();
-
-    if(!['audio','video'].includes(type)||!title)
-      return res.status(400).json({success:false,message:'Provide type=audio or type=video and X-Media-Title header.'});
-
-    if(type==='audio'&&!mime.startsWith('audio/'))
-      return res.status(400).json({success:false,message:'Audio uploads must use an audio content type.'});
-
-    if(type==='video'&&!mime.startsWith('video/'))
-      return res.status(400).json({success:false,message:'Video uploads must use a video content type.'});
-
-    const extMap={
-      'audio/mpeg':'.mp3',
-      'audio/wav':'.wav',
-      'audio/x-wav':'.wav',
-      'audio/ogg':'.ogg',
-      'audio/mp4':'.m4a',
-      'video/mp4':'.mp4',
-      'video/webm':'.webm',
-      'audio/webm':'.webm'
-    };
-
-    const ext=extMap[mime];
-    if(!ext)
-      return res.status(415).json({success:false,message:'Unsupported media format. Allowed: MP3, WAV, OGG, M4A, MP4 and WebM.'});
-
-    const maxBytes=type==='audio'?25*1024*1024:100*1024*1024;
-    const limitLabel=type==='audio'?'25 MB':'100 MB';
-    const length=Number(req.headers['content-length']||0);
-    if(length>maxBytes)
-      return res.status(413).json({success:false,message:`This ${type} upload exceeds the ImageKit ${limitLabel} limit.`});
-
-    if(!process.env.IMAGEKIT_PRIVATE_KEY)
-      return res.status(503).json({success:false,message:'ImageKit storage is not configured. Please contact support.'});
-
-    let bytes=0;
-    let prefix=Buffer.alloc(0);
-    let failed=false;
-    let tempDir=null;
-    let uploaded=null;
-    const mediaId=id();
-
-    const validator=new Transform({
-      transform(chunk,encoding,callback) {
-        bytes+=chunk.length;
-        if(bytes>maxBytes) {
-          failed=true;
-          return callback(Object.assign(
-            new Error(`This ${type} upload exceeds the ImageKit ${limitLabel} limit.`),
-            {statusCode:413}
-          ));
-        }
-        if(prefix.length<32)
-          prefix=Buffer.concat([prefix,chunk.subarray(0,32-prefix.length)]);
-        callback(null,chunk);
-      },
-      flush(callback) {
-        let ok=false;
-        if(mime==='audio/mpeg')
-          ok=(prefix.length>3&&prefix.subarray(0,3).toString()==='ID3')||
-             (prefix.length>1&&prefix[0]===0xff&&(prefix[1]&0xe0)===0xe0);
-        else if(mime==='audio/wav'||mime==='audio/x-wav')
-          ok=prefix.length>12&&prefix.subarray(0,4).toString()==='RIFF'&&prefix.subarray(8,12).toString()==='WAVE';
-        else if(mime==='audio/ogg')
-          ok=prefix.length>4&&prefix.subarray(0,4).toString()==='OggS';
-        else if(mime==='audio/mp4'||mime==='video/mp4')
-          ok=prefix.length>12&&prefix.subarray(4,8).toString()==='ftyp';
-        else if(mime==='video/webm'||mime==='audio/webm')
-          ok=prefix.length>4&&prefix.subarray(0,4).equals(Buffer.from([0x1a,0x45,0xdf,0xa3]));
-        if(!ok)
-          return callback(Object.assign(
-            new Error('Unsupported media format or file signature.'),
-            {statusCode:415}
-          ));
-        callback();
-      }
-    });
-
-    try {
+      const me=await user(req,res); if(!me)return;
+      const type=safe(req.body.type,10);
+      const title=safe(req.body.title,120);
+      const description=safe(req.body.description,1000);
+      const mime=safe(req.body.mimeType,60).split(';')[0].toLowerCase();
+      const extMap={
+        'audio/mpeg':'.mp3','audio/wav':'.wav','audio/x-wav':'.wav',
+        'audio/ogg':'.ogg','audio/mp4':'.m4a','video/mp4':'.mp4',
+        'video/webm':'.webm','audio/webm':'.webm'
+      };
+      if(!['audio','video'].includes(type)||!title)
+        return res.status(400).json({success:false,message:'Provide a media type and title.'});
+      if((type==='audio'&&!mime.startsWith('audio/'))||(type==='video'&&!mime.startsWith('video/'))||!extMap[mime])
+        return res.status(415).json({success:false,message:'Unsupported media format. Allowed: MP3, WAV, OGG, M4A, MP4 and WebM.'});
+      if(!process.env.IMAGEKIT_PRIVATE_KEY||!process.env.IMAGEKIT_PUBLIC_KEY)
+        return res.status(503).json({success:false,message:'ImageKit private and public keys must be configured.'});
       const imageKit=await getImageKitClient();
-      tempDir=await fs.promises.mkdtemp(path.join(os.tmpdir(),'bga-imagekit-'));
-      const tempFile=path.join(tempDir,`${mediaId}${ext}`);
-
-      await pipeline(req,validator,fs.createWriteStream(tempFile,{flags:'wx'}));
-
-      uploaded=await imageKit.files.upload({
-        file:fs.createReadStream(tempFile),
-        fileName:`${mediaId}${ext}`,
-        folder:'/baba-go-again/media',
-        useUniqueFileName:false,
-        overwriteFile:false
-      });
-
-      if(!uploaded.url||!uploaded.fileId)
-        throw new Error('ImageKit did not return a media URL and file ID.');
-
+      const token=crypto.randomUUID();
+      const auth=imageKit.helper.getAuthenticationParameters(token);
       const now=date();
-      const url=uploaded.url;
-
-      try {
-        await db.run(
-          'INSERT INTO bga_media_posts (id,user_id,media_type,title,description,media_url,mime_type,bytes,moderation_status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-          [mediaId,me.id,type,title,description,url,mime,bytes,'pending',now]
-        );
-      } catch(e) {
-        await imageKit.files.delete(uploaded.fileId).catch(()=>{});
-        throw e;
-      }
-
-      return res.status(201).json({
+      const expiresAt=new Date(Number(auth.expire)*1000).toISOString();
+      await db.run(
+        'INSERT INTO bga_media_upload_intents (id,user_id,media_type,title,description,mime_type,expires_at,status,created_at) VALUES (?,?,?,?,?,?,?,?,?)',
+        [token,me.id,type,title,description,mime,expiresAt,'pending',now]
+      );
+      res.json({
         success:true,
         data:{
-          id:mediaId,
-          mediaType:type,
-          title,
-          description,
-          mediaUrl:url,
-          mimeType:mime,
-          bytes,
-          createdAt:now,
-          moderationStatus:'pending'
+          token:auth.token,expire:auth.expire,signature:auth.signature,
+          publicKey:process.env.IMAGEKIT_PUBLIC_KEY,
+          fileName:token+extMap[mime],folder:'/baba-go-again/media',
+          maxBytes:type==='audio'?25*1024*1024:500*1024*1024
         }
       });
     } catch(e) {
-      if(res.headersSent)return;
-      const status=e.statusCode||(failed?413:502);
-      if(status>=500)
-        console.error('ImageKit media upload failed:',e.message);
-      return res.status(status).json({
-        success:false,
-        message:status===413
-          ?`This ${type} upload exceeds the ImageKit ${limitLabel} limit.`
-          :status===415
-            ?e.message
-            :'Media upload failed. Please check the ImageKit credentials and storage settings, then retry.'
-      });
-    } finally {
-      if(tempDir) await fs.promises.rm(tempDir,{recursive:true,force:true}).catch(()=>{});
+      console.error('ImageKit upload auth failed:',e.message);
+      res.status(500).json({success:false,message:'Could not prepare secure media upload.'});
     }
   });
 
+  app.post('/api/media/upload-complete', async (req,res) => {
+    try {
+      const me=await user(req,res); if(!me)return;
+      const token=safe(req.body.token,80);
+      const fileId=safe(req.body.fileId,160);
+      if(!token||!fileId)return res.status(400).json({success:false,message:'Upload confirmation is incomplete.'});
+      const intent=await db.get(
+        "SELECT * FROM bga_media_upload_intents WHERE id=? AND user_id=? AND status='pending' AND expires_at>?",
+        [token,me.id,date()]
+      );
+      if(!intent)return res.status(410).json({success:false,message:'Upload session expired or already used. Please start again.'});
+      const imageKit=await getImageKitClient();
+      const privateKey=process.env.IMAGEKIT_PRIVATE_KEY;
+      const response=await fetch('https://api.imagekit.io/v1/files/'+encodeURIComponent(fileId)+'/details',{
+        method:'GET',
+        headers:{Authorization:'Basic '+Buffer.from(privateKey+':').toString('base64')}
+      });
+      if(!response.ok)throw new Error('ImageKit could not verify the uploaded file (HTTP '+response.status+').');
+      const asset=await response.json();
+      const extMap={
+        'audio/mpeg':'.mp3','audio/wav':'.wav','audio/x-wav':'.wav',
+        'audio/ogg':'.ogg','audio/mp4':'.m4a','video/mp4':'.mp4',
+        'video/webm':'.webm','audio/webm':'.webm'
+      };
+      const expectedPath='/baba-go-again/media/'+token+extMap[intent.mime_type];
+      const maxBytes=intent.media_type==='audio'?25*1024*1024:500*1024*1024;
+      const expectedFileType=intent.media_type==='video'?'non-image':'non-image';
+      if(asset.filePath!==expectedPath||asset.mime!==intent.mime_type||
+         !Number.isFinite(Number(asset.size))||Number(asset.size)<=0||Number(asset.size)>maxBytes||
+         asset.fileType!==expectedFileType) {
+        await imageKit.files.delete(fileId).catch(()=>{});
+        await db.run("UPDATE bga_media_upload_intents SET status='rejected' WHERE id=?",[token]);
+        return res.status(400).json({success:false,message:'The uploaded file did not pass media verification or exceeds the allowed size.'});
+      }
+      const now=date();
+      await db.transaction(async tx=>{
+        await tx.run(
+          'INSERT INTO bga_media_posts (id,user_id,media_type,title,description,media_url,mime_type,bytes,moderation_status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
+          [token,me.id,intent.media_type,intent.title,intent.description,asset.url,intent.mime_type,Number(asset.size),'pending',now]
+        );
+        await tx.run("UPDATE bga_media_upload_intents SET status='completed' WHERE id=? AND status='pending'",[token]);
+      });
+      res.status(201).json({success:true,message:'Upload complete. Your media is awaiting moderator approval.'});
+    } catch(e) {
+      console.error('ImageKit upload confirmation failed:',e.message);
+      res.status(502).json({success:false,message:'The upload reached ImageKit but could not be verified. Please contact support before retrying.'});
+    }
+  });
 
   // Community reporting: members can report content; moderators review reports.
   app.post('/api/community/reports', async (req,res) => {
