@@ -5,10 +5,6 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env.mysql') });
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
-// This app uses the three separate Cloudinary credentials.
-// Remove any stale or malformed legacy URL before Cloudinary is imported.
-delete process.env.CLOUDINARY_URL;
-
 const express = require('express');
 const helmet = require('helmet');
 const { rateLimit } = require('express-rate-limit');
@@ -18,39 +14,6 @@ const crypto = require('crypto');
 const db = require('./database-mysql');
 const { initializeCoreSchema } = require('./schema-mysql');
 const opay = require('./opay');
-const cloudinary = require('cloudinary').v2;
-
-// Support both CLOUDINARY_URL and three separate credentials.
-let urlConfig = {};
-
-if (process.env.CLOUDINARY_URL) {
-  try {
-    const parsed = new URL(process.env.CLOUDINARY_URL);
-    urlConfig = {
-      cloud_name: parsed.hostname,
-      api_key: decodeURIComponent(parsed.username),
-      api_secret: decodeURIComponent(parsed.password)
-    };
-  } catch (error) {
-    console.error('[Cloudinary] CLOUDINARY_URL could not be parsed.');
-  }
-}
-
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || urlConfig.cloud_name,
-  api_key: process.env.CLOUDINARY_API_KEY || urlConfig.api_key,
-  api_secret: process.env.CLOUDINARY_API_SECRET || urlConfig.api_secret,
-  secure: true
-});
-
-const cloudConfig = cloudinary.config();
-
-console.log('[Cloudinary startup diagnostic]', {
-  cloudNamePresent: Boolean(cloudConfig.cloud_name),
-  apiKeyPresent: Boolean(cloudConfig.api_key),
-  apiSecretPresent: Boolean(cloudConfig.api_secret)
-});
-
 const { createReferralService } = require('./referrals');
 const referrals = createReferralService(db);
 
@@ -839,7 +802,7 @@ app.get('/api/referrals/me', async (req, res) => {
 
 
 /* Baba Go Again extended social, media, public-profile and founder-admin features. */
-require('./features').install(app, { db, authenticatedUser, frontendPath, referrals, cloudinary });
+require('./features').install(app, { db, authenticatedUser, frontendPath, referrals });
 
 app.get('/dashboard', (req,res) => res.sendFile(path.join(frontendPath,'dashboard.html')));
 app.get('/profile', (req, res) => res.sendFile(path.join(frontendPath, 'profile.html')));
