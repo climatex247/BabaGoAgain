@@ -9,7 +9,7 @@ const { pipeline } = require('stream/promises');
 
 const CATEGORIES = ['influencer', 'musician', 'politician', 'community_leader', 'religious_leader'];
 const ADMIN_ROLES = ['profile_verification', 'community_moderator', 'media_moderator', 'member_support', 'wallet_admin'];
-const MAX_MEDIA_BYTES = 100 * 1024 * 1024;
+const MAX_MEDIA_BYTES = 500 * 1024 * 1024;
 
 function safe(value, max = 500) { return String(value == null ? '' : value).trim().slice(0, max); }
 function id() { return crypto.randomUUID(); }
