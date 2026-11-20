@@ -3,12 +3,13 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { Transform } = require('stream');
 const { pipeline } = require('stream/promises');
 
 const CATEGORIES = ['influencer', 'musician', 'politician', 'community_leader', 'religious_leader'];
 const ADMIN_ROLES = ['profile_verification', 'community_moderator', 'media_moderator', 'member_support', 'wallet_admin'];
-const MAX_MEDIA_BYTES = 500 * 1024 * 1024;
+const MAX_MEDIA_BYTES = 100 * 1024 * 1024;
 
 function safe(value, max = 500) { return String(value == null ? '' : value).trim().slice(0, max); }
 function id() { return crypto.randomUUID(); }
@@ -26,8 +27,18 @@ function validMedia(buffer, mime) {
 }
 
 function install(app, ctx) {
-  const { db, authenticatedUser, frontendPath, referrals, cloudinary } = ctx;
-  const mediaDir = path.join(frontendPath, 'uploads', 'media');
+  const { db, authenticatedUser, frontendPath, referrals } = ctx;
+  let imageKitClientPromise;
+  async function getImageKitClient() {
+    const privateKey = process.env.IMAGEKIT_PRIVATE_KEY;
+    if (!privateKey) throw new Error('IMAGEKIT_PRIVATE_KEY is not configured.');
+    if (!imageKitClientPromise) {
+      imageKitClientPromise = import('@imagekit/nodejs').then(({ default: ImageKit }) =>
+        new ImageKit({ privateKey, timeout: 5 * 60 * 1000 })
+      ).catch(error => { imageKitClientPromise = null; throw error; });
+    }
+    return imageKitClientPromise;
+  }
   let schemaPromise;
 
   async function ensureSchema() {
@@ -424,39 +435,38 @@ app.get('/api/public-profiles', async (req,res) => {
     if(!ext)
       return res.status(415).json({success:false,message:'Unsupported media format. Allowed: MP3, WAV, OGG, M4A, MP4 and WebM.'});
 
+    const maxBytes=type==='audio'?25*1024*1024:100*1024*1024;
+    const limitLabel=type==='audio'?'25 MB':'100 MB';
     const length=Number(req.headers['content-length']||0);
-    if(length>MAX_MEDIA_BYTES)
-      return res.status(413).json({success:false,message:'Media exceeds the 500 MB upload limit.'});
+    if(length>maxBytes)
+      return res.status(413).json({success:false,message:`This ${type} upload exceeds the ImageKit ${limitLabel} limit.`});
 
-    const cloudConfig=cloudinary.config();
-    if(!cloudConfig.cloud_name || !cloudConfig.api_key || !cloudConfig.api_secret)
-      return res.status(503).json({success:false,message:'Cloud media storage is not configured. Please contact support.'});
+    if(!process.env.IMAGEKIT_PRIVATE_KEY)
+      return res.status(503).json({success:false,message:'ImageKit storage is not configured. Please contact support.'});
 
     let bytes=0;
     let prefix=Buffer.alloc(0);
     let failed=false;
+    let tempDir=null;
+    let uploaded=null;
+    const mediaId=id();
 
     const validator=new Transform({
       transform(chunk,encoding,callback) {
         bytes+=chunk.length;
-
-        if(bytes>MAX_MEDIA_BYTES) {
+        if(bytes>maxBytes) {
           failed=true;
           return callback(Object.assign(
-            new Error('Media exceeds the 500 MB upload limit.'),
+            new Error(`This ${type} upload exceeds the ImageKit ${limitLabel} limit.`),
             {statusCode:413}
           ));
         }
-
         if(prefix.length<32)
           prefix=Buffer.concat([prefix,chunk.subarray(0,32-prefix.length)]);
-
         callback(null,chunk);
       },
-
       flush(callback) {
         let ok=false;
-
         if(mime==='audio/mpeg')
           ok=(prefix.length>3&&prefix.subarray(0,3).toString()==='ID3')||
              (prefix.length>1&&prefix[0]===0xff&&(prefix[1]&0xe0)===0xe0);
@@ -468,45 +478,35 @@ app.get('/api/public-profiles', async (req,res) => {
           ok=prefix.length>12&&prefix.subarray(4,8).toString()==='ftyp';
         else if(mime==='video/webm'||mime==='audio/webm')
           ok=prefix.length>4&&prefix.subarray(0,4).equals(Buffer.from([0x1a,0x45,0xdf,0xa3]));
-
         if(!ok)
           return callback(Object.assign(
             new Error('Unsupported media format or file signature.'),
             {statusCode:415}
           ));
-
         callback();
       }
     });
 
-    const mediaId=id();
-    let uploaded=null;
-
     try {
-      const uploadResult=new Promise((resolve,reject) => {
-        const uploadStream=cloudinary.uploader.upload_chunked_stream({
-          resource_type:'video',
-          folder:'baba-go-again/media',
-          public_id:mediaId,
-          chunk_size:6000000,
-          overwrite:false
-        },(error,result) => {
-          if(error)return reject(error);
-          if(result && result.done===false)return;
-          if(result)return resolve(result);
-          reject(new Error('Cloudinary did not return an upload result.'));
-        });
+      const imageKit=await getImageKitClient();
+      tempDir=await fs.promises.mkdtemp(path.join(os.tmpdir(),'bga-imagekit-'));
+      const tempFile=path.join(tempDir,`${mediaId}${ext}`);
 
-        pipeline(req,validator,uploadStream).catch(reject);
+      await pipeline(req,validator,fs.createWriteStream(tempFile,{flags:'wx'}));
+
+      uploaded=await imageKit.files.upload({
+        file:fs.createReadStream(tempFile),
+        fileName:`${mediaId}${ext}`,
+        folder:'/baba-go-again/media',
+        useUniqueFileName:false,
+        overwriteFile:false
       });
 
-      uploaded=await uploadResult;
-
-      if(!uploaded.secure_url||!uploaded.public_id)
-        throw new Error('Cloudinary upload did not return a media URL.');
+      if(!uploaded.url||!uploaded.fileId)
+        throw new Error('ImageKit did not return a media URL and file ID.');
 
       const now=date();
-      const url=uploaded.secure_url;
+      const url=uploaded.url;
 
       try {
         await db.run(
@@ -514,7 +514,7 @@ app.get('/api/public-profiles', async (req,res) => {
           [mediaId,me.id,type,title,description,url,mime,bytes,'pending',now]
         );
       } catch(e) {
-        await cloudinary.uploader.destroy(uploaded.public_id,{resource_type:'video'}).catch(()=>{});
+        await imageKit.files.delete(uploaded.fileId).catch(()=>{});
         throw e;
       }
 
@@ -532,26 +532,23 @@ app.get('/api/public-profiles', async (req,res) => {
           moderationStatus:'pending'
         }
       });
-
     } catch(e) {
       if(res.headersSent)return;
-
       const status=e.statusCode||(failed?413:502);
-
       if(status>=500)
-        console.error('Cloudinary media upload failed:',e.message);
-
+        console.error('ImageKit media upload failed:',e.message);
       return res.status(status).json({
         success:false,
         message:status===413
-          ?'Media exceeds the 500 MB upload limit.'
+          ?`This ${type} upload exceeds the ImageKit ${limitLabel} limit.`
           :status===415
             ?e.message
-            :'Media upload failed. Please check your connection and Cloudinary storage settings, then retry.'
+            :'Media upload failed. Please check the ImageKit credentials and storage settings, then retry.'
       });
+    } finally {
+      if(tempDir) await fs.promises.rm(tempDir,{recursive:true,force:true}).catch(()=>{});
     }
   });
-
 
 
   // Community reporting: members can report content; moderators review reports.
