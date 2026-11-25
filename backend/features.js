@@ -422,7 +422,6 @@ app.get('/api/public-profiles', async (req,res) => {
         success:true,
         data:{
           token,
-          uploadUrl:'https://api.publit.io/v1/files/create?'+new URLSearchParams(auth).toString(),
           title,
           description,
           extension:extMap[mime],
@@ -432,6 +431,64 @@ app.get('/api/public-profiles', async (req,res) => {
     } catch(e) {
       console.error('Publitio upload preparation failed:',e.message);
       res.status(500).json({success:false,message:'Could not prepare secure media upload.'});
+    }
+  });
+
+  // Stream authenticated browser uploads through this server so Publitio's
+  // API signature and secret never need to be exposed to the browser.
+  app.post('/api/media/upload-file', async (req,res) => {
+    try {
+      const me=await user(req,res); if(!me)return;
+      const token=safe(req.headers['x-bga-upload-token'],80);
+      if(!token)return res.status(400).json({success:false,message:'Upload session is missing.'});
+      const intent=await db.get(
+        "SELECT * FROM bga_media_upload_intents WHERE id=? AND user_id=? AND status='pending' AND expires_at>?",
+        [token,me.id,date()]
+      );
+      if(!intent)return res.status(410).json({success:false,message:'Upload session expired or already used. Please start again.'});
+
+      const contentType=String(req.headers['content-type']||'');
+      if(!/^multipart\/form-data\s*;\s*boundary=/i.test(contentType))
+        return res.status(415).json({success:false,message:'Upload must use multipart form data.'});
+
+      const maxBytes=intent.media_type==='audio'?25*1024*1024:500*1024*1024;
+      const declaredLength=Number(req.headers['content-length']||0);
+      if(declaredLength>maxBytes+1024*1024)
+        return res.status(413).json({success:false,message:'File exceeds the allowed upload size.'});
+
+      const auth=publitioSignature();
+      const uploadUrl='https://api.publit.io/v1/files/create?'+new URLSearchParams(auth).toString();
+      let received=0;
+      const limitedBody=req.pipe(new Transform({
+        transform(chunk,encoding,callback) {
+          received+=chunk.length;
+          if(received>maxBytes+1024*1024) return callback(new Error('Upload exceeds the allowed size.'));
+          callback(null,chunk);
+        }
+      }));
+      const headers={
+        'Content-Type':contentType,
+        'Accept':'application/json'
+      };
+      if(declaredLength>0)headers['Content-Length']=String(declaredLength);
+
+      const upstream=await fetch(uploadUrl,{
+        method:'POST',
+        headers,
+        body:limitedBody,
+        duplex:'half'
+      });
+      const raw=await upstream.text();
+      let payload;
+      try { payload=JSON.parse(raw); }
+      catch { payload={success:false,message:'Publitio returned an unreadable response.'}; }
+      return res.status(upstream.status).json(payload);
+    } catch(e) {
+      if(/exceeds the allowed size/i.test(String(e.message)))
+        return res.status(413).json({success:false,message:'File exceeds the allowed upload size.'});
+      console.error('Publitio proxied upload failed:',e.message);
+      if(!res.headersSent)
+        return res.status(502).json({success:false,message:'BabaGoAgain could not complete the upload to Publitio. Please try again.'});
     }
   });
 
