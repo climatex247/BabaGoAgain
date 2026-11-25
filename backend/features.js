@@ -534,7 +534,10 @@ app.get('/api/public-profiles', async (req,res) => {
         return u.protocol==='https:'&&u.hostname==='media.publit.io'&&u.pathname.startsWith('/file/');
       }catch{return false;}})();
       const validId=String(asset.id||'')===fileId;
-      const validType=actualType===expectedType;
+      // Some Publitio file-show responses omit "type"; in that case,
+      // accept only when the extension is one explicitly allowed for the
+      // requested MIME type (the extension check below remains mandatory).
+      const validType=actualType ? actualType===expectedType : expectedExtensions.includes(actualExtension);
       const validExtension=expectedExtensions.includes(actualExtension);
       const validSize=Number.isFinite(actualSize)&&actualSize>0&&actualSize<=maxBytes;
       console.info('Publitio verification checks:',{
