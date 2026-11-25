@@ -7,11 +7,12 @@
     data.append('privacy','1');
     data.append('option_download','1');
     const xhr=new XMLHttpRequest();
-    xhr.open('POST',auth.uploadUrl);
+    xhr.open('POST','/api/media/upload-file');
+    xhr.setRequestHeader('X-BGA-Upload-Token',auth.token);
     xhr.upload.onprogress=e=>{
       if(e.lengthComputable){
         const pct=Math.round(e.loaded/e.total*100);
-        $('uploadStatus').textContent='Uploading directly to Publitio… '+pct+'%';
+        $('uploadStatus').textContent='Uploading securely… '+pct+'%';
       }
     };
     xhr.onload=()=>{
@@ -20,7 +21,7 @@
       if(xhr.status>=200&&xhr.status<300&&body.success&&body.id)resolve(body);
       else reject(Error(body.message||body.error||'Publitio upload failed (HTTP '+xhr.status+').'));
     };
-    xhr.onerror=()=>reject(Error('Network error while uploading to Publitio.'));
+    xhr.onerror=()=>reject(Error('Network error while uploading. Check your connection and try again.'));
     xhr.onabort=()=>reject(Error('Upload was cancelled.'));
     xhr.send(data);
   });
