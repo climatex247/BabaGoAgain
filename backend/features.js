@@ -531,7 +531,7 @@ app.get('/api/public-profiles', async (req,res) => {
       const mediaUrl=safe(asset.url_preview||asset.url,1000);
       const validUrl=(()=>{try{
         const u=new URL(mediaUrl);
-        return u.protocol==='https:'&&u.hostname==='media.publit.io'&&u.pathname.startsWith('/file/');
+        return u.protocol==='https:'&&/(^|\\.)publit\\.io$/i.test(u.hostname);
       }catch{return false;}})();
       const validId=String(asset.id||'')===fileId;
       // Some Publitio file-show responses omit "type"; in that case,
