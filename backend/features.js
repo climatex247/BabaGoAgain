@@ -506,25 +506,45 @@ app.get('/api/public-profiles', async (req,res) => {
       const auth=publitioSignature();
       const verifyUrl='https://api.publit.io/v1/files/show/'+encodeURIComponent(fileId)+'?'+new URLSearchParams(auth).toString();
       const response=await fetch(verifyUrl,{method:'GET',headers:{Accept:'application/json'}});
-      const asset=await response.json().catch(()=>({}));
-      if(!response.ok||asset.success!==true) {
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok||payload.success!==true) {
         throw new Error('Publitio could not verify the uploaded file (HTTP '+response.status+').');
       }
+      // Publitio normally returns file fields at the top level; some API responses
+      // wrap them in "message". Normalize both documented response shapes.
+      const asset=payload.message&&typeof payload.message==='object'
+        ? {...payload,...payload.message}
+        : payload;
       const extMap={
-        'audio/mpeg':'mp3','audio/wav':'wav','audio/x-wav':'wav',
-        'audio/ogg':'ogg','audio/mp4':'m4a','video/mp4':'mp4',
-        'video/webm':'webm','audio/webm':'webm'
+        'audio/mpeg':['mp3'],'audio/mp3':['mp3'],
+        'audio/wav':['wav'],'audio/x-wav':['wav'],
+        'audio/ogg':['ogg'],'audio/mp4':['m4a','mp4'],
+        'video/mp4':['mp4'],'video/webm':['webm'],
+        'audio/webm':['webm']
       };
       const maxBytes=intent.media_type==='audio'?25*1024*1024:500*1024*1024;
-      const expectedType=intent.media_type;
-      const expectedExtension=extMap[intent.mime_type];
-      const mediaUrl=safe(asset.url_preview,1000);
-      if(String(asset.id)!==fileId||asset.type!==expectedType||
-         asset.extension!==expectedExtension||
-         !Number.isFinite(Number(asset.size))||Number(asset.size)<=0||Number(asset.size)>maxBytes||
-         !/^https:\/\/media\.publit\.io\/file\//i.test(mediaUrl)) {
+      const expectedType=String(intent.media_type||'').toLowerCase();
+      const expectedExtensions=extMap[String(intent.mime_type||'').toLowerCase()]||[];
+      const actualType=String(asset.type||'').toLowerCase();
+      const actualExtension=String(asset.extension||'').toLowerCase().replace(/^\\./,'');
+      const actualSize=Number(asset.size);
+      const mediaUrl=safe(asset.url_preview||asset.url,1000);
+      const validUrl=(()=>{try{
+        const u=new URL(mediaUrl);
+        return u.protocol==='https:'&&u.hostname==='media.publit.io'&&u.pathname.startsWith('/file/');
+      }catch{return false;}})();
+      const validId=String(asset.id||'')===fileId;
+      const validType=actualType===expectedType;
+      const validExtension=expectedExtensions.includes(actualExtension);
+      const validSize=Number.isFinite(actualSize)&&actualSize>0&&actualSize<=maxBytes;
+      console.info('Publitio verification checks:',{
+        idMatch:validId,type:actualType,expectedType,extension:actualExtension,
+        expectedExtensions,size:actualSize,maxBytes,urlValid:validUrl,
+        responseKeys:Object.keys(asset)
+      });
+      if(!validId||!validType||!validExtension||!validSize||!validUrl) {
         await db.run("UPDATE bga_media_upload_intents SET status='rejected' WHERE id=?",[token]);
-        return res.status(400).json({success:false,message:'The uploaded file did not pass media verification or exceeds the allowed size.'});
+        return res.status(400).json({success:false,message:'Publitio received the file, but its returned media details did not match the upload. Please contact support before retrying.'});
       }
       const now=date();
       await db.transaction(async tx=>{
