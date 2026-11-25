@@ -28,16 +28,14 @@ function validMedia(buffer, mime) {
 
 function install(app, ctx) {
   const { db, authenticatedUser, frontendPath, referrals } = ctx;
-  let imageKitClientPromise;
-  async function getImageKitClient() {
-    const privateKey = process.env.IMAGEKIT_PRIVATE_KEY;
-    if (!privateKey) throw new Error('IMAGEKIT_PRIVATE_KEY is not configured.');
-    if (!imageKitClientPromise) {
-      imageKitClientPromise = import('@imagekit/nodejs').then(({ default: ImageKit }) =>
-        new ImageKit({ privateKey, timeout: 5 * 60 * 1000 })
-      ).catch(error => { imageKitClientPromise = null; throw error; });
-    }
-    return imageKitClientPromise;
+  function publitioSignature() {
+    const apiKey = process.env.PUBLITIO_API_KEY;
+    const apiSecret = process.env.PUBLITIO_API_SECRET;
+    if (!apiKey || !apiSecret) throw new Error('Publitio API credentials are not configured.');
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const nonce = String(crypto.randomInt(10000000, 100000000));
+    const signature = crypto.createHash('sha1').update(timestamp + nonce + apiSecret).digest('hex');
+    return { api_key: apiKey, api_timestamp: timestamp, api_nonce: nonce, api_signature: signature };
   }
   let schemaPromise;
 
@@ -402,21 +400,20 @@ app.get('/api/public-profiles', async (req,res) => {
       const description=safe(req.body.description,1000);
       const mime=safe(req.body.mimeType,60).split(';')[0].toLowerCase();
       const extMap={
-        'audio/mpeg':'.mp3','audio/wav':'.wav','audio/x-wav':'.wav',
-        'audio/ogg':'.ogg','audio/mp4':'.m4a','video/mp4':'.mp4',
-        'video/webm':'.webm','audio/webm':'.webm'
+        'audio/mpeg':'mp3','audio/wav':'wav','audio/x-wav':'wav',
+        'audio/ogg':'ogg','audio/mp4':'m4a','video/mp4':'mp4',
+        'video/webm':'webm','audio/webm':'webm'
       };
       if(!['audio','video'].includes(type)||!title)
         return res.status(400).json({success:false,message:'Provide a media type and title.'});
       if((type==='audio'&&!mime.startsWith('audio/'))||(type==='video'&&!mime.startsWith('video/'))||!extMap[mime])
         return res.status(415).json({success:false,message:'Unsupported media format. Allowed: MP3, WAV, OGG, M4A, MP4 and WebM.'});
-      if(!process.env.IMAGEKIT_PRIVATE_KEY||!process.env.IMAGEKIT_PUBLIC_KEY)
-        return res.status(503).json({success:false,message:'ImageKit private and public keys must be configured.'});
-      const imageKit=await getImageKitClient();
+      if(!process.env.PUBLITIO_API_KEY||!process.env.PUBLITIO_API_SECRET)
+        return res.status(503).json({success:false,message:'Publitio API credentials must be configured.'});
       const token=crypto.randomUUID();
-      const auth=imageKit.helper.getAuthenticationParameters(token);
+      const auth=publitioSignature();
       const now=date();
-      const expiresAt=new Date(Number(auth.expire)*1000).toISOString();
+      const expiresAt=new Date(Date.now()+15*60*1000).toISOString();
       await db.run(
         'INSERT INTO bga_media_upload_intents (id,user_id,media_type,title,description,mime_type,expires_at,status,created_at) VALUES (?,?,?,?,?,?,?,?,?)',
         [token,me.id,type,title,description,mime,expiresAt,'pending',now]
@@ -424,14 +421,16 @@ app.get('/api/public-profiles', async (req,res) => {
       res.json({
         success:true,
         data:{
-          token:auth.token,expire:auth.expire,signature:auth.signature,
-          publicKey:process.env.IMAGEKIT_PUBLIC_KEY,
-          fileName:token+extMap[mime],folder:'/baba-go-again/media',
+          token,
+          uploadUrl:'https://api.publit.io/v1/files/create?'+new URLSearchParams(auth).toString(),
+          title,
+          description,
+          extension:extMap[mime],
           maxBytes:type==='audio'?25*1024*1024:500*1024*1024
         }
       });
     } catch(e) {
-      console.error('ImageKit upload auth failed:',e.message);
+      console.error('Publitio upload preparation failed:',e.message);
       res.status(500).json({success:false,message:'Could not prepare secure media upload.'});
     }
   });
@@ -440,33 +439,33 @@ app.get('/api/public-profiles', async (req,res) => {
     try {
       const me=await user(req,res); if(!me)return;
       const token=safe(req.body.token,80);
-      const fileId=safe(req.body.fileId,160);
+      const fileId=safe(req.body.fileId,80);
       if(!token||!fileId)return res.status(400).json({success:false,message:'Upload confirmation is incomplete.'});
       const intent=await db.get(
         "SELECT * FROM bga_media_upload_intents WHERE id=? AND user_id=? AND status='pending' AND expires_at>?",
         [token,me.id,date()]
       );
       if(!intent)return res.status(410).json({success:false,message:'Upload session expired or already used. Please start again.'});
-      const imageKit=await getImageKitClient();
-      const privateKey=process.env.IMAGEKIT_PRIVATE_KEY;
-      const response=await fetch('https://api.imagekit.io/v1/files/'+encodeURIComponent(fileId)+'/details',{
-        method:'GET',
-        headers:{Authorization:'Basic '+Buffer.from(privateKey+':').toString('base64')}
-      });
-      if(!response.ok)throw new Error('ImageKit could not verify the uploaded file (HTTP '+response.status+').');
-      const asset=await response.json();
+      const auth=publitioSignature();
+      const verifyUrl='https://api.publit.io/v1/files/show/'+encodeURIComponent(fileId)+'?'+new URLSearchParams(auth).toString();
+      const response=await fetch(verifyUrl,{method:'GET',headers:{Accept:'application/json'}});
+      const asset=await response.json().catch(()=>({}));
+      if(!response.ok||asset.success!==true) {
+        throw new Error('Publitio could not verify the uploaded file (HTTP '+response.status+').');
+      }
       const extMap={
-        'audio/mpeg':'.mp3','audio/wav':'.wav','audio/x-wav':'.wav',
-        'audio/ogg':'.ogg','audio/mp4':'.m4a','video/mp4':'.mp4',
-        'video/webm':'.webm','audio/webm':'.webm'
+        'audio/mpeg':'mp3','audio/wav':'wav','audio/x-wav':'wav',
+        'audio/ogg':'ogg','audio/mp4':'m4a','video/mp4':'mp4',
+        'video/webm':'webm','audio/webm':'webm'
       };
-      const expectedPath='/baba-go-again/media/'+token+extMap[intent.mime_type];
       const maxBytes=intent.media_type==='audio'?25*1024*1024:500*1024*1024;
-      const expectedFileType=intent.media_type==='video'?'non-image':'non-image';
-      if(asset.filePath!==expectedPath||asset.mime!==intent.mime_type||
+      const expectedType=intent.media_type;
+      const expectedExtension=extMap[intent.mime_type];
+      const mediaUrl=safe(asset.url_preview,1000);
+      if(String(asset.id)!==fileId||asset.type!==expectedType||
+         asset.extension!==expectedExtension||
          !Number.isFinite(Number(asset.size))||Number(asset.size)<=0||Number(asset.size)>maxBytes||
-         asset.fileType!==expectedFileType) {
-        await imageKit.files.delete(fileId).catch(()=>{});
+         !/^https:\/\/media\.publit\.io\/file\//i.test(mediaUrl)) {
         await db.run("UPDATE bga_media_upload_intents SET status='rejected' WHERE id=?",[token]);
         return res.status(400).json({success:false,message:'The uploaded file did not pass media verification or exceeds the allowed size.'});
       }
@@ -474,14 +473,14 @@ app.get('/api/public-profiles', async (req,res) => {
       await db.transaction(async tx=>{
         await tx.run(
           'INSERT INTO bga_media_posts (id,user_id,media_type,title,description,media_url,mime_type,bytes,moderation_status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-          [token,me.id,intent.media_type,intent.title,intent.description,asset.url,intent.mime_type,Number(asset.size),'pending',now]
+          [token,me.id,intent.media_type,intent.title,intent.description,mediaUrl,intent.mime_type,Number(asset.size),'pending',now]
         );
         await tx.run("UPDATE bga_media_upload_intents SET status='completed' WHERE id=? AND status='pending'",[token]);
       });
       res.status(201).json({success:true,message:'Upload complete. Your media is awaiting moderator approval.'});
     } catch(e) {
-      console.error('ImageKit upload confirmation failed:',e.message);
-      res.status(502).json({success:false,message:'The upload reached ImageKit but could not be verified. Please contact support before retrying.'});
+      console.error('Publitio upload confirmation failed:',e.message);
+      res.status(502).json({success:false,message:'The upload reached Publitio but could not be verified. Please contact support before retrying.'});
     }
   });
 
