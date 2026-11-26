@@ -59,6 +59,15 @@ async function initializeFeatureSchema() {
     const actualNames = new Set(foreignKeys.map(row => row.CONSTRAINT_NAME));
     for (const name of expected) assert.ok(actualNames.has(name), 'Missing MySQL foreign key: ' + name);
 
+    // Exercise SQLite-compatible REPLACE SQL through the production MySQL adapter.
+    await db.run('CREATE TABLE IF NOT EXISTS bga_mysql_replace_adapter_test (id VARCHAR(40) PRIMARY KEY, value VARCHAR(40) NOT NULL) ENGINE=InnoDB');
+    await db.run('DELETE FROM bga_mysql_replace_adapter_test');
+    await db.run('INSERT INTO bga_mysql_replace_adapter_test (id,value) VALUES (?,?)', ['same-id','first']);
+    await db.run('INSERT OR REPLACE INTO bga_mysql_replace_adapter_test (id,value) VALUES (?,?)', ['same-id','second']);
+    const replaced = await db.get('SELECT value FROM bga_mysql_replace_adapter_test WHERE id=?', ['same-id']);
+    assert.equal(replaced?.value, 'second', 'MySQL adapter must preserve SQLite INSERT OR REPLACE behavior');
+    await db.run('DROP TABLE bga_mysql_replace_adapter_test');
+
     console.log('[MYSQL INTEGRATION] Core, wallet, feature, notification, and 18 foreign-key schemas passed twice.');
   } finally {
     await db.close().catch(() => {});
