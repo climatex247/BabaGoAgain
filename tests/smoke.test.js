@@ -30,7 +30,7 @@ assert.match(registerJs, /resetSelect\(pollingSelect, 'Select a ward first'\)/, 
 assert.match(registerJs, /referralCode:\s*\(referralCodeInput/, 'registration must submit referral code');
 assert.match(registerJs, /referralParams\.get\('ref'\)/, 'registration must read referral links');
 const mysqlAdapter = fs.readFileSync(path.join(root, 'backend/database-mysql.js'), 'utf8');
-assert.match(mysqlAdapter, /INSERT\s+OR\s+REPLACE\s+INTO[\s\S]*REPLACE INTO/,'MySQL adapter must translate SQLite replace inserts');
+assert.ok(mysqlAdapter.includes('OR\\s+REPLACE\\s+INTO') && mysqlAdapter.includes("'REPLACE INTO'"),'MySQL adapter must translate SQLite replace inserts');
 const server = fs.readFileSync(path.join(root, 'backend/server.js'), 'utf8');
 const database = fs.readFileSync(path.join(root, 'backend/database.js'), 'utf8');
 const mysqlSchema = fs.readFileSync(path.join(root, 'backend/schema-mysql.js'), 'utf8');
