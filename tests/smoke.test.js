@@ -86,6 +86,7 @@ assert.match(featuresSource, /orphan_count/,'Foreign-key migrations must detect 
 assert.match(featuresSource, /CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci/,'Foreign-key columns must match the users table collation');
 assert.match(featuresSource, /fk_bga_notifications_user/,'Notification ownership must be protected by a user foreign key');
 assert.match(featuresSource, /CREATE TABLE IF NOT EXISTS bga_notifications/,'Notifications table must be initialized before wallet notification writes');
+assert.equal((featuresSource.match(/CREATE TABLE IF NOT EXISTS bga_notifications/g)||[]).length,1,'Notifications must have one shared startup schema, not request-time DDL');
 assert.match(featuresSource, /ADD CONSTRAINT.*FOREIGN KEY/,'Feature relationships must be enforced by real table-level foreign keys');
 assert.doesNotMatch(featuresSource, /VARCHAR\(191\) NOT NULL REFERENCES/,'MySQL must not rely on ignored inline REFERENCES syntax');
 assert.match(featuresSource, /is_read TINYINT NOT NULL DEFAULT 0/,'Notification read state must use a MySQL integer type');
