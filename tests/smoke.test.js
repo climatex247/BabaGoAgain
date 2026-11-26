@@ -57,6 +57,11 @@ assert.match(walletServer, /if \(e\.statusCode === 409\)\s*\{\s*return res\.stat
 assert.match(walletServer, /idempotencyKey/,'Wallet credits must require an idempotency key');
 assert.match(walletServer, /BGA-CREDIT-/,'Wallet credit references must be deterministic for retries');
 assert.match(walletServer, /This credit was already processed/,'Wallet credit retries must not add a duplicate ledger entry');
+assert.match(walletServer, /INSERT INTO bga_admin_audit[\s\S]*?wallet_credit/,'Administrator credits must create an audit record');
+assert.match(walletServer, /await featuresReady/,'HTTP server startup must wait for feature and administrator schemas');
+const featuresSource = fs.readFileSync(path.join(root,'backend/features.js'),'utf8');
+assert.match(featuresSource, /user_id VARCHAR\(191\) NOT NULL REFERENCES users\(id\)[\s\S]*?role VARCHAR\(50\) NOT NULL/,'MySQL administrator role keys must use indexable types');
+assert.match(featuresSource, /return ensureSchema\(\)\.then\(bootstrapFounder\)/,'Feature schema readiness must be awaited during startup');
 const adminWalletJs = fs.readFileSync(path.join(root,'frontend/admin-wallet.js'),'utf8');
 assert.match(adminWalletJs, /crypto\.randomUUID\(\)/,'Admin credit form must generate an idempotency key');
 assert.match(adminWalletJs, /pendingCreditKey/,'Admin credit form must reuse the same key when retrying an unchanged request');
