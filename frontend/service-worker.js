@@ -5,7 +5,10 @@ const SHELL_URLS = [
   '/',
   '/offline.html',
   '/manifest.webmanifest',
-  '/assets/bga-app-icon.svg'
+  '/assets/bga-app-icon.svg',
+  '/assets/baba-go-again-welcome-2027.webp',
+  '/app-nav.css?v=20261119-globalnav4',
+  '/app-nav.js?v=20261119-globalnav4'
 ];
 
 self.addEventListener('install', event => {
