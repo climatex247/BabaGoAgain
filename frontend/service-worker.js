@@ -10,6 +10,8 @@ const SHELL_URLS = [
   '/app-nav.css?v=20261119-globalnav4',
   '/app-nav.js?v=20261119-globalnav4'
 ];
+// Match shell paths independently of their cache-busting query strings.
+const SHELL_PATHS = SHELL_URLS.map(value => new URL(value, self.location.origin).pathname);
 
 self.addEventListener('install', event => {
   event.waitUntil(
@@ -36,7 +38,7 @@ self.addEventListener('fetch', event => {
 
   // Never cache APIs, authentication, wallet, admin, user data, or media uploads.
   if (url.pathname.startsWith('/api/') ||
-      /^(?:\/(?:login|register|dashboard|profile|referrals|community|messages|notifications|media|wallet|admin-center|founder-dashboard|forgot-password|reset-password|verify-email))(?:\/|$)/.test(url.pathname)) {
+      /^(?:\\/(?:login|register|dashboard|profile|referrals|community|messages|notifications|media|wallet|admin-center|founder-dashboard|forgot-password|reset-password|verify-email))(?:\\/|$)/.test(url.pathname)) {
     return;
   }
 
@@ -51,7 +53,7 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  if (SHELL_URLS.includes(url.pathname)) {
+  if (SHELL_PATHS.includes(url.pathname)) {
     event.respondWith(
       caches.match(request).then(cached => cached || fetch(request))
     );
