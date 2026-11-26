@@ -105,6 +105,28 @@ assert.match(adminWalletJs, /crypto\.randomUUID\(\)/,'Admin credit form must gen
 assert.match(adminWalletJs, /pendingCreditKey/,'Admin credit form must reuse the same key when retrying an unchanged request');
 assert.match(fs.readFileSync(path.join(root,'backend/opay.js'),'utf8'), /\/api\/v3\/transfer\/toBank/);
 
+const opaySource = fs.readFileSync(path.join(root,'backend/opay.js'),'utf8');
+assert.match(opaySource, /createHmac\('sha512'/,'OPay requests must be signed with HMAC-SHA512');
+assert.match(opaySource, /baseUrl\.startsWith\('https:\/\/'\)/,'OPay payouts must require HTTPS');
+assert.match(opaySource, /AbortSignal\.timeout\(20000\)/,'OPay requests must have a bounded timeout');
+assert.match(opaySource, /if \(!orderNo\) throw new Error/,'OPay status checks must refuse requests without a provider order number');
+assert.match(opaySource, /status\/toWallet/,'OPay wallet transfers must use the wallet status endpoint');
+assert.match(opaySource, /status\/toBank/,'OPay bank transfers must use the bank status endpoint');
+const approveStart = walletServer.indexOf("app.post('/api/admin/wallet/payouts/:id/approve'");
+const statusStart = walletServer.indexOf("app.post('/api/admin/wallet/payouts/:id/check-status'");
+const approveRoute = walletServer.slice(approveStart,statusStart);
+const statusRoute = walletServer.slice(statusStart,walletServer.indexOf('/* Nigeria',statusStart));
+assert.ok(approveStart >= 0 && statusStart > approveStart,'OPay approval and reconciliation routes must exist in order');
+assert.ok(approveRoute.indexOf("status='processing'") < approveRoute.indexOf('opay.createTransfer('),'A payout must be claimed before calling OPay');
+assert.match(approveRoute, /Transfer outcome is uncertain[\s\S]*?remains processing/,'Uncertain OPay submission must not automatically refund or retry');
+assert.match(statusRoute, /\['SUCCESS','SUCCESSFUL','COMPLETED'\]/,'Only explicit OPay success states may complete a payout');
+assert.match(statusRoute, /\['FAIL','FAILED','CANCEL','CANCELLED','REJECTED'\]/,'Only explicit OPay failure states may trigger a refund');
+assert.match(statusRoute, /payout remains processing/,'Unknown OPay states must remain processing');
+assert.match(statusRoute, /WHERE id=\? AND status='processing'/,'Final status changes must be conditional on the processing state');
+assert.match(statusRoute, /refundPayoutIfNeeded/,'Failed OPay status reconciliation must use the idempotent refund helper');
+assert.doesNotMatch(walletServer, /app\.post\(['"]\/api\/admin\/wallet\/payouts\/:id\/complete/,'There must be no manual endpoint to mark an OPay payout completed');
+
+
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bga-db-smoke-'));
 try {
   const dbPath = path.join(tempDir, 'smoke.sqlite');
