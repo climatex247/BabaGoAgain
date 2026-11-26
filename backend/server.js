@@ -149,6 +149,23 @@ app.get('/api', (req, res) => {
   });
 });
 
+// Always serve the latest welcome poster for legacy image URLs too.
+// This prevents cached/older welcome-page HTML from displaying the retired poster.
+const currentWelcomePoster = path.join(frontendPath, 'assets', 'baba-go-again-welcome-2027.webp');
+for (const legacyPosterUrl of [
+  '/assets/baba-go-again-tinubu-2027.jpg',
+  '/assets/baba-go-again-tinubu-2027.png',
+  '/assets/baba-go-again-campaign.jpg'
+]) {
+  app.get(legacyPosterUrl, (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.type('image/webp');
+    res.sendFile(currentWelcomePoster);
+  });
+}
+
 app.use(express.static(frontendPath, {
   setHeaders(res, filePath) {
     if (/register\.(js|html)$/.test(filePath) || /index\.html$/.test(filePath) || /baba-go-again-welcome-2027\.webp$/.test(filePath)) {
