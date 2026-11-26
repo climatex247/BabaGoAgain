@@ -4,7 +4,7 @@
     data.append('file',file,file.name);
     data.append('title',auth.title);
     data.append('description',auth.description||'');
-    data.append('privacy','1');
+    data.append('privacy','0');
     data.append('option_download','1');
     const xhr=new XMLHttpRequest();
     xhr.open('POST','/api/media/upload-file');
