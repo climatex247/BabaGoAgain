@@ -24,6 +24,26 @@ permissions:
 jobs:
   wallet-security:
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root-password
+          MYSQL_DATABASE: bga_wallet_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pci-root-password"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+    env:
+      MYSQL_HOST: 127.0.0.1
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: bga_wallet_test
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ci-root-password
+      MYSQL_SSL: 'false'
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -39,3 +59,6 @@ jobs:
       - name: Run syntax and smoke checks
         working-directory: backend
         run: npm run preflight
+      - name: Run isolated MySQL 8.4 schema integration checks
+        working-directory: backend
+        run: npm run mysql:schema:integration
