@@ -69,7 +69,7 @@ function install(app, ctx) {
         `CREATE TABLE IF NOT EXISTS bga_media_upload_intents (id TEXT PRIMARY KEY, user_id VARCHAR(191) NOT NULL REFERENCES users(id) ON DELETE CASCADE, media_type TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', mime_type TEXT NOT NULL, expires_at TEXT NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL)`,
         `CREATE INDEX IF NOT EXISTS idx_bga_media_created ON bga_media_posts(media_type,created_at)`,
         `CREATE TABLE IF NOT EXISTS bga_admin_roles (user_id VARCHAR(191) NOT NULL REFERENCES users(id) ON DELETE CASCADE, role VARCHAR(50) NOT NULL, granted_by VARCHAR(191) REFERENCES users(id), granted_at TEXT NOT NULL, PRIMARY KEY(user_id,role))`,
-        `CREATE TABLE IF NOT EXISTS bga_admin_audit (id TEXT PRIMARY KEY, actor_id VARCHAR(191) NOT NULL REFERENCES users(id), action TEXT NOT NULL, target_id TEXT, details TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL)`,
+        `CREATE TABLE IF NOT EXISTS bga_admin_audit (id TEXT PRIMARY KEY, actor_id VARCHAR(191) NOT NULL REFERENCES users(id), action VARCHAR(100) NOT NULL, target_id VARCHAR(191), details VARCHAR(2000) NOT NULL DEFAULT '', created_at VARCHAR(40) NOT NULL)`,
         `CREATE TABLE IF NOT EXISTS bga_community_reports (
           id TEXT PRIMARY KEY,
           reporter_id VARCHAR(191) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -87,10 +87,20 @@ function install(app, ctx) {
         `CREATE INDEX IF NOT EXISTS idx_bga_reports_queue ON bga_community_reports(status,created_at)`
       ];
       for (const sql of statements) {
-        // Secondary indexes are optional; skip them during initialization.
         if (/^CREATE INDEX IF NOT EXISTS/i.test(sql)) continue;
         await db.run(sql);
       }
+      // MySQL does not support SQLite's CREATE INDEX IF NOT EXISTS syntax.
+      for (const sql of statements.filter(statement => /^CREATE INDEX IF NOT EXISTS/i.test(statement))) {
+        const mysqlIndexSql = sql.replace(/^CREATE INDEX IF NOT EXISTS/i, 'CREATE INDEX');
+        try {
+          await db.run(mysqlIndexSql);
+        } catch (error) {
+          if (Number(error.errno) !== 1061 && error.code !== 'ER_DUP_KEYNAME') throw error;
+        }
+      }
+      // Widen legacy audit details safely; this preserves existing audit records.
+      await db.run("ALTER TABLE bga_admin_audit MODIFY COLUMN details VARCHAR(2000) NOT NULL DEFAULT ''");
       // Add moderation fields after creating the table (safe for old and new databases).
       try { await db.run("ALTER TABLE bga_media_posts ADD COLUMN moderation_status VARCHAR(20) NOT NULL DEFAULT 'pending'"); } catch (e) { if (!/duplicate|exists|1060|SQLITE_ERROR/i.test(String(e.message))) throw e; }
       try { await db.run("ALTER TABLE bga_media_posts ADD COLUMN reviewed_by TEXT"); } catch (e) { if (!/duplicate|exists|1060|SQLITE_ERROR/i.test(String(e.message))) throw e; }
