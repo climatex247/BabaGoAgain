@@ -59,16 +59,16 @@ function install(app, ctx) {
       await db.ready();
       const statements = [
         `CREATE TABLE IF NOT EXISTS bga_conversations (id VARCHAR(191) PRIMARY KEY, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
-        `CREATE TABLE IF NOT EXISTS bga_conversation_members (conversation_id VARCHAR(191) NOT NULL REFERENCES bga_conversations(id) ON DELETE CASCADE, user_id VARCHAR(191) NOT NULL REFERENCES users(id) ON DELETE CASCADE, joined_at TEXT NOT NULL, PRIMARY KEY(conversation_id,user_id))`,
-        `CREATE TABLE IF NOT EXISTS bga_messages (id VARCHAR(191) PRIMARY KEY, conversation_id VARCHAR(191) NOT NULL REFERENCES bga_conversations(id) ON DELETE CASCADE, sender_id VARCHAR(191) NOT NULL REFERENCES users(id) ON DELETE CASCADE, body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 4000), created_at VARCHAR(40) NOT NULL, read_at VARCHAR(40))`,
+        `CREATE TABLE IF NOT EXISTS bga_conversation_members (conversation_id VARCHAR(191) NOT NULL, user_id VARCHAR(191) NOT NULL, joined_at TEXT NOT NULL, PRIMARY KEY(conversation_id,user_id))`,
+        `CREATE TABLE IF NOT EXISTS bga_messages (id VARCHAR(191) PRIMARY KEY, conversation_id VARCHAR(191) NOT NULL, sender_id VARCHAR(191) NOT NULL, body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 4000), created_at VARCHAR(40) NOT NULL, read_at VARCHAR(40))`,
         `CREATE INDEX IF NOT EXISTS idx_bga_messages_conversation ON bga_messages(conversation_id,created_at)`,
-        `CREATE TABLE IF NOT EXISTS bga_profile_applications (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL REFERENCES users(id) ON DELETE CASCADE, category TEXT NOT NULL, display_name TEXT NOT NULL, biography TEXT NOT NULL, evidence_url TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')), reviewed_by VARCHAR(191) REFERENCES users(id), reviewed_at TEXT, review_note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, UNIQUE(user_id))`,
-        `CREATE TABLE IF NOT EXISTS bga_public_profiles (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE, category TEXT NOT NULL, display_name TEXT NOT NULL, biography TEXT NOT NULL, evidence_url TEXT NOT NULL DEFAULT '', verified INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
-        `CREATE TABLE IF NOT EXISTS bga_follows (follower_id VARCHAR(191) NOT NULL REFERENCES users(id) ON DELETE CASCADE, profile_id VARCHAR(191) NOT NULL REFERENCES bga_public_profiles(id) ON DELETE CASCADE, created_at TEXT NOT NULL, PRIMARY KEY(follower_id,profile_id))`,
-        `CREATE TABLE IF NOT EXISTS bga_media_posts (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL REFERENCES users(id) ON DELETE CASCADE, media_type VARCHAR(20) NOT NULL CHECK(media_type IN ('audio','video')), title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', media_url TEXT NOT NULL, mime_type VARCHAR(100) NOT NULL, bytes BIGINT NOT NULL, moderation_status VARCHAR(20) NOT NULL DEFAULT 'pending', reviewed_by VARCHAR(191), reviewed_at VARCHAR(40), created_at VARCHAR(40) NOT NULL)`,
-        `CREATE TABLE IF NOT EXISTS bga_media_upload_intents (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL REFERENCES users(id) ON DELETE CASCADE, media_type TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', mime_type TEXT NOT NULL, expires_at TEXT NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL)`,
+        `CREATE TABLE IF NOT EXISTS bga_profile_applications (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL, category TEXT NOT NULL, display_name TEXT NOT NULL, biography TEXT NOT NULL, evidence_url TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')), reviewed_by VARCHAR(191), reviewed_at TEXT, review_note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, UNIQUE(user_id))`,
+        `CREATE TABLE IF NOT EXISTS bga_public_profiles (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL UNIQUE, category TEXT NOT NULL, display_name TEXT NOT NULL, biography TEXT NOT NULL, evidence_url TEXT NOT NULL DEFAULT '', verified INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
+        `CREATE TABLE IF NOT EXISTS bga_follows (follower_id VARCHAR(191) NOT NULL, profile_id VARCHAR(191) NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(follower_id,profile_id))`,
+        `CREATE TABLE IF NOT EXISTS bga_media_posts (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL, media_type VARCHAR(20) NOT NULL CHECK(media_type IN ('audio','video')), title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', media_url TEXT NOT NULL, mime_type VARCHAR(100) NOT NULL, bytes BIGINT NOT NULL, moderation_status VARCHAR(20) NOT NULL DEFAULT 'pending', reviewed_by VARCHAR(191), reviewed_at VARCHAR(40), created_at VARCHAR(40) NOT NULL)`,
+        `CREATE TABLE IF NOT EXISTS bga_media_upload_intents (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL, media_type TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', mime_type TEXT NOT NULL, expires_at TEXT NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL)`,
         `CREATE INDEX IF NOT EXISTS idx_bga_media_created ON bga_media_posts(media_type,created_at)`,
-        `CREATE TABLE IF NOT EXISTS bga_admin_roles (user_id VARCHAR(191) NOT NULL REFERENCES users(id) ON DELETE CASCADE, role VARCHAR(50) NOT NULL, granted_by VARCHAR(191) REFERENCES users(id), granted_at TEXT NOT NULL, PRIMARY KEY(user_id,role))`,
+        `CREATE TABLE IF NOT EXISTS bga_admin_roles (user_id VARCHAR(191) NOT NULL, role VARCHAR(50) NOT NULL, granted_by VARCHAR(191), granted_at TEXT NOT NULL, PRIMARY KEY(user_id,role))`,
         `CREATE TABLE IF NOT EXISTS bga_admin_audit (id VARCHAR(191) PRIMARY KEY, actor_id VARCHAR(191) NOT NULL REFERENCES users(id), action VARCHAR(100) NOT NULL, target_id VARCHAR(191), details VARCHAR(2000) NOT NULL DEFAULT '', created_at VARCHAR(40) NOT NULL)`,
         `CREATE TABLE IF NOT EXISTS bga_community_reports (
           id VARCHAR(191) PRIMARY KEY,
@@ -78,7 +78,7 @@ function install(app, ctx) {
           reason TEXT NOT NULL,
           details TEXT NOT NULL DEFAULT '',
           status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','dismissed','resolved','hidden')),
-          reviewed_by VARCHAR(191) REFERENCES users(id),
+          reviewed_by VARCHAR(191),
           reviewed_at TEXT,
           review_note TEXT NOT NULL DEFAULT '',
           created_at VARCHAR(40) NOT NULL,
@@ -115,6 +115,41 @@ function install(app, ctx) {
       await db.run("ALTER TABLE bga_community_reports MODIFY COLUMN target_type VARCHAR(20) NOT NULL");
       await db.run("ALTER TABLE bga_community_reports MODIFY COLUMN target_id VARCHAR(191) NOT NULL");
       await db.run("ALTER TABLE bga_community_reports MODIFY COLUMN created_at VARCHAR(40) NOT NULL");
+      // MySQL ignores column-level REFERENCES clauses. Add real InnoDB foreign keys
+      // explicitly, after validating legacy rows so startup never silently deletes data.
+      const featureForeignKeys = [
+        ['bga_conversation_members','fk_bga_conv_members_conversation','conversation_id','bga_conversations','id','CASCADE'],
+        ['bga_conversation_members','fk_bga_conv_members_user','user_id','users','id','CASCADE'],
+        ['bga_messages','fk_bga_messages_conversation','conversation_id','bga_conversations','id','CASCADE'],
+        ['bga_messages','fk_bga_messages_sender','sender_id','users','id','CASCADE'],
+        ['bga_profile_applications','fk_bga_profile_apps_user','user_id','users','id','CASCADE'],
+        ['bga_profile_applications','fk_bga_profile_apps_reviewer','reviewed_by','users','id','SET NULL'],
+        ['bga_public_profiles','fk_bga_public_profiles_user','user_id','users','id','CASCADE'],
+        ['bga_follows','fk_bga_follows_follower','follower_id','users','id','CASCADE'],
+        ['bga_follows','fk_bga_follows_profile','profile_id','bga_public_profiles','id','CASCADE'],
+        ['bga_media_posts','fk_bga_media_posts_user','user_id','users','id','CASCADE'],
+        ['bga_media_posts','fk_bga_media_posts_reviewer','reviewed_by','users','id','SET NULL'],
+        ['bga_media_upload_intents','fk_bga_media_intents_user','user_id','users','id','CASCADE'],
+        ['bga_admin_roles','fk_bga_admin_roles_user','user_id','users','id','CASCADE'],
+        ['bga_admin_roles','fk_bga_admin_roles_grantor','granted_by','users','id','SET NULL'],
+        ['bga_admin_audit','fk_bga_admin_audit_actor','actor_id','users','id','RESTRICT'],
+        ['bga_community_reports','fk_bga_reports_reporter','reporter_id','users','id','CASCADE'],
+        ['bga_community_reports','fk_bga_reports_reviewer','reviewed_by','users','id','SET NULL']
+      ];
+      for (const [table,constraint,column,parent,parentColumn,onDelete] of featureForeignKeys) {
+        const exists = await db.get(
+          "SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA=DATABASE() AND TABLE_NAME=? AND CONSTRAINT_NAME=? AND CONSTRAINT_TYPE='FOREIGN KEY'",
+          [table,constraint]
+        );
+        if (exists) continue;
+        const orphans = await db.get(
+          'SELECT COUNT(*) AS orphan_count FROM \`' + table + '\` child LEFT JOIN \`' + parent + '\` parent ON child.\`' + column + '\`=parent.\`' + parentColumn + '\` WHERE child.\`' + column + '\` IS NOT NULL AND parent.\`' + parentColumn + '\` IS NULL'
+        );
+        if (Number(orphans?.orphan_count || 0) > 0) {
+          throw new Error('Cannot add ' + constraint + ': existing orphan rows must be reviewed before enabling this foreign key.');
+        }
+        await db.run('ALTER TABLE \`' + table + '\` ADD CONSTRAINT \`' + constraint + '\` FOREIGN KEY (\`' + column + '\`) REFERENCES \`' + parent + '\` (\`' + parentColumn + '\`) ON DELETE ' + onDelete);
+      }
       // MySQL does not support SQLite's CREATE INDEX IF NOT EXISTS syntax.
       for (const sql of statements.filter(statement => /^CREATE INDEX IF NOT EXISTS/i.test(statement))) {
         const mysqlIndexSql = sql.replace(/^CREATE INDEX IF NOT EXISTS/i, 'CREATE INDEX');
