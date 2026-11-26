@@ -85,7 +85,93 @@ async function initializeFeatureSchema() {
     assert.equal(replaced?.value, 'second', 'MySQL adapter must preserve SQLite INSERT OR REPLACE behavior');
     await db.run('DROP TABLE bga_mysql_replace_adapter_test');
 
-    console.log('[MYSQL INTEGRATION] Core, wallet, feature, notification, and 18 foreign-key schemas passed twice.');
+    // Exercise the wallet ledger's critical InnoDB behaviors using disposable CI-only rows.
+    const crypto = require('node:crypto');
+    const testUserId = 'ci-wallet-' + crypto.randomUUID();
+    const testPayoutId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    await db.run(
+      'INSERT INTO users (id,full_name,phone,email,address,state_id,state_name,lga_id,lga_name,ward_id,ward_name,roles_json,password_hash,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      [testUserId,'CI Wallet Test','+234' + String(Date.now()).slice(-10),testUserId + '@example.invalid','CI test address','ci-state','CI State','ci-lga','CI LGA','ci-ward','CI Ward','["Volunteer"]','not-a-real-password-hash',now,now]
+    );
+    try {
+      await db.run(
+        'INSERT INTO wallet_transactions (id,user_id,type,amount_kobo,reference,description,created_by,created_at) VALUES (?,?,?,?,?,?,?,?)',
+        [crypto.randomUUID(),testUserId,'volunteer_credit',10000,'CI-SEED-' + testUserId,'Disposable CI wallet seed',testUserId,now]
+      );
+
+      // Two simultaneous 7,000-kobo payout reservations must not overspend a 10,000-kobo balance.
+      const reserve = () => db.transaction(async tx => {
+        const locked = await tx.get('SELECT id FROM users WHERE id=? FOR UPDATE',[testUserId]);
+        assert.ok(locked, 'Payout reservation must lock an existing user row');
+        const row = await tx.get(
+          'SELECT CAST(COALESCE(SUM(amount_kobo),0) AS CHAR) AS balance FROM wallet_transactions WHERE user_id=?',
+          [testUserId]
+        );
+        const balance = BigInt(row.balance || '0');
+        if (balance < 7000n) throw new Error('insufficient balance');
+        await tx.run(
+          'INSERT INTO wallet_transactions (id,user_id,type,amount_kobo,reference,description,related_payout_id,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?)',
+          [crypto.randomUUID(),testUserId,'payout_hold',-7000,'CI-HOLD-' + crypto.randomUUID(),'Disposable concurrent payout hold',null,testUserId,new Date().toISOString()]
+        );
+        return true;
+      });
+      const reservations = await Promise.allSettled([reserve(),reserve()]);
+      assert.equal(reservations.filter(result => result.status === 'fulfilled').length,1,'Only one concurrent payout reservation may spend the available balance');
+      assert.equal(reservations.filter(result => result.status === 'rejected').length,1,'The competing payout reservation must be rejected');
+      let ledger = await db.get(
+        'SELECT CAST(SUM(amount_kobo) AS CHAR) AS balance FROM wallet_transactions WHERE user_id=?',
+        [testUserId]
+      );
+      assert.equal(String(ledger.balance),'3000','Concurrent payout holds must leave a non-negative exact balance');
+
+      // A rejected payout is refunded once, even if the rejection handler is retried.
+      await db.run(
+        'INSERT INTO wallet_payouts (id,user_id,amount_kobo,recipient_type,recipient_name,recipient_data_encrypted,status,opay_reference,requested_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
+        [testPayoutId,testUserId,7000,'opay_wallet','CI Recipient','encrypted-test-only','pending','CI-OPAY-' + testPayoutId,now,now]
+      );
+      const rejectAndRefund = () => db.transaction(async tx => {
+        const changed = await tx.run(
+          "UPDATE wallet_payouts SET status='rejected',updated_at=? WHERE id=? AND status='pending'",
+          [new Date().toISOString(),testPayoutId]
+        );
+        if (!changed.changes) return false;
+        const reference = 'PAYOUT-REFUND-' + testPayoutId;
+        await tx.run(
+          'INSERT INTO wallet_transactions (id,user_id,type,amount_kobo,reference,description,related_payout_id,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?)',
+          [crypto.randomUUID(),testUserId,'payout_refund',7000,reference,'Disposable CI payout refund',testPayoutId,testUserId,new Date().toISOString()]
+        );
+        return true;
+      });
+      assert.equal(await rejectAndRefund(),true,'First rejection must refund the reserved amount');
+      assert.equal(await rejectAndRefund(),false,'Repeated rejection must not refund again');
+      const refunds = await db.get(
+        "SELECT COUNT(*) AS count,CAST(COALESCE(SUM(amount_kobo),0) AS CHAR) AS amount FROM wallet_transactions WHERE user_id=? AND type='payout_refund' AND related_payout_id=?",
+        [testUserId,testPayoutId]
+      );
+      assert.equal(Number(refunds.count),1,'A payout may have only one refund ledger entry');
+      assert.equal(String(refunds.amount),'7000','Refund must restore the exact held kobo amount');
+      ledger = await db.get(
+        'SELECT CAST(SUM(amount_kobo) AS CHAR) AS balance FROM wallet_transactions WHERE user_id=?',
+        [testUserId]
+      );
+      assert.equal(String(ledger.balance),'10000','Refund must restore the original wallet balance exactly');
+
+      // The unique reference constraint must reject duplicate credits/ledger events.
+      await assert.rejects(
+        db.run(
+          'INSERT INTO wallet_transactions (id,user_id,type,amount_kobo,reference,description,created_at) VALUES (?,?,?,?,?,?,?)',
+          [crypto.randomUUID(),testUserId,'volunteer_credit',100,'CI-SEED-' + testUserId,'Duplicate reference',now]
+        ),
+        /Duplicate entry|ER_DUP_ENTRY/i
+      );
+    } finally {
+      await db.run('DELETE FROM wallet_transactions WHERE user_id=?',[testUserId]);
+      await db.run('DELETE FROM wallet_payouts WHERE user_id=?',[testUserId]);
+      await db.run('DELETE FROM users WHERE id=?',[testUserId]);
+    }
+
+    console.log('[MYSQL INTEGRATION] Core, wallet, feature, notification, and 18 foreign-key schemas passed twice; concurrent payout, one-time refund, exact ledger balance, and unique-reference checks passed.');
   } finally {
     await db.close().catch(() => {});
   }
