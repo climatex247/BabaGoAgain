@@ -40,6 +40,23 @@ async function initializeFeatureSchema() {
       assert.equal(tableMap.get(table), 'InnoDB', table + ' must use InnoDB');
     }
 
+    const expectedLengths = [
+      ['bga_profile_applications','evidence_url',1000],
+      ['bga_profile_applications','review_note',1000],
+      ['bga_public_profiles','evidence_url',1000],
+      ['bga_media_posts','description',1500],
+      ['bga_media_upload_intents','description',1500],
+      ['bga_community_reports','details',1000],
+      ['bga_community_reports','review_note',1000]
+    ];
+    for (const [table,column,length] of expectedLengths) {
+      const [columns] = await db.pool.query(
+        'SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?',
+        [table,column]
+      );
+      assert.equal(Number(columns[0]?.CHARACTER_MAXIMUM_LENGTH), length, table + '.' + column + ' must preserve its supported text length');
+    }
+
     const [foreignKeys] = await db.pool.query(
       "SELECT TABLE_NAME,CONSTRAINT_NAME,COLUMN_NAME,REFERENCED_TABLE_NAME,REFERENCED_COLUMN_NAME " +
       "FROM information_schema.KEY_COLUMN_USAGE " +
