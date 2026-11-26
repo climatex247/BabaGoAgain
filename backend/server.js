@@ -1172,7 +1172,21 @@ app.post('/api/wallet/payouts', async (req,res) => {
     }
     const encrypted = encryptRecipient(recipient), payoutId = crypto.randomUUID(), now = new Date().toISOString(), ref = 'BGA-' + payoutId.replace(/-/g,'').slice(0,24).toUpperCase();
     await db.transaction(async tx => {
-      const row = await tx.get('SELECT COALESCE(SUM(amount_kobo),0) AS balance FROM wallet_transactions WHERE user_id=?', [user.id]);
+      // Serialize payout reservations for this account. Without this row lock,
+      // two concurrent requests can both read the same available balance and
+      // each reserve it before either transaction commits.
+      const lockedUser = await tx.get(
+        'SELECT id FROM users WHERE id=? FOR UPDATE',
+        [user.id]
+      );
+      if (!lockedUser) {
+        throw Object.assign(new Error('Your account could not be verified for this payout.'), {statusCode:404});
+      }
+
+      const row = await tx.get(
+        'SELECT COALESCE(SUM(amount_kobo),0) AS balance FROM wallet_transactions WHERE user_id=?',
+        [user.id]
+      );
       const balance = Number(row?.balance || 0), amountKobo = requestedAmountKobo;
       if (balance < amountKobo) throw Object.assign(new Error('Your available volunteer balance is insufficient for this payout.'),{statusCode:400});
       await tx.run('INSERT INTO wallet_payouts (id,user_id,amount_kobo,recipient_type,recipient_name,recipient_data_encrypted,status,opay_reference,requested_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)', [payoutId,user.id,amountKobo,recipientType,recipientName,encrypted,'pending',ref,now,now]);
