@@ -708,11 +708,26 @@ app.get('/api/public-profiles', async (req,res) => {
       }
       const now=date();
       await db.transaction(async tx=>{
+        // Lock and consume the upload intent before creating the media row.
+        // Two simultaneous completion requests must never publish the same intent twice.
+        const lockedIntent = await tx.get(
+          "SELECT id FROM bga_media_upload_intents WHERE id=? AND user_id=? AND status='pending' AND expires_at>? FOR UPDATE",
+          [token,me.id,date()]
+        );
+        if (!lockedIntent) {
+          throw Object.assign(new Error('This upload session has already been completed or expired.'), { statusCode: 409 });
+        }
+        const consumed = await tx.run(
+          "UPDATE bga_media_upload_intents SET status='completed' WHERE id=? AND user_id=? AND status='pending'",
+          [token,me.id]
+        );
+        if (consumed.changes !== 1) {
+          throw Object.assign(new Error('This upload session has already been completed or expired.'), { statusCode: 409 });
+        }
         await tx.run(
           'INSERT INTO bga_media_posts (id,user_id,media_type,title,description,media_url,mime_type,bytes,moderation_status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
           [token,me.id,intent.media_type,intent.title,intent.description,mediaUrl,intent.mime_type,Number(asset.size),'pending',now]
         );
-        await tx.run("UPDATE bga_media_upload_intents SET status='completed' WHERE id=? AND status='pending'",[token]);
       });
       res.status(201).json({success:true,message:'Upload complete. Your media is awaiting moderator approval.'});
     } catch(e) {
