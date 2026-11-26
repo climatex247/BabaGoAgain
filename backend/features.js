@@ -69,10 +69,10 @@ function install(app, ctx) {
         `CREATE TABLE IF NOT EXISTS bga_media_upload_intents (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL, media_type TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', mime_type TEXT NOT NULL, expires_at TEXT NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL)`,
         `CREATE INDEX IF NOT EXISTS idx_bga_media_created ON bga_media_posts(media_type,created_at)`,
         `CREATE TABLE IF NOT EXISTS bga_admin_roles (user_id VARCHAR(191) NOT NULL, role VARCHAR(50) NOT NULL, granted_by VARCHAR(191), granted_at TEXT NOT NULL, PRIMARY KEY(user_id,role))`,
-        `CREATE TABLE IF NOT EXISTS bga_admin_audit (id VARCHAR(191) PRIMARY KEY, actor_id VARCHAR(191) NOT NULL REFERENCES users(id), action VARCHAR(100) NOT NULL, target_id VARCHAR(191), details VARCHAR(2000) NOT NULL DEFAULT '', created_at VARCHAR(40) NOT NULL)`,
+        `CREATE TABLE IF NOT EXISTS bga_admin_audit (id VARCHAR(191) PRIMARY KEY, actor_id VARCHAR(191) NOT NULL, action VARCHAR(100) NOT NULL, target_id VARCHAR(191), details VARCHAR(2000) NOT NULL DEFAULT '', created_at VARCHAR(40) NOT NULL)`,
         `CREATE TABLE IF NOT EXISTS bga_community_reports (
           id VARCHAR(191) PRIMARY KEY,
-          reporter_id VARCHAR(191) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          reporter_id VARCHAR(191) NOT NULL,
           target_type VARCHAR(20) NOT NULL CHECK(target_type IN ('post','comment','group','event')),
           target_id VARCHAR(191) NOT NULL,
           reason TEXT NOT NULL,
