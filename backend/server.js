@@ -1248,7 +1248,9 @@ app.post('/api/admin/wallet/credit', async (req,res) => {
           if (!matches) throw Object.assign(new Error('This credit request key was already used for different details. Refresh the page before creating a new credit.'),{statusCode:409});
           return;
         }
-        await tx.run('INSERT INTO wallet_transactions (id,user_id,type,amount_kobo,reference,description,created_by,created_at) VALUES (?,?,?,?,?,?,?,?)',[crypto.randomUUID(),userId,'volunteer_credit',amountKobo,reference,description,admin.id,new Date().toISOString()]);
+        const creditedAt = new Date().toISOString();
+        await tx.run('INSERT INTO wallet_transactions (id,user_id,type,amount_kobo,reference,description,created_by,created_at) VALUES (?,?,?,?,?,?,?,?)',[crypto.randomUUID(),userId,'volunteer_credit',amountKobo,reference,description,admin.id,creditedAt]);
+        await tx.run('INSERT INTO bga_admin_audit (id,actor_id,action,target_id,details,created_at) VALUES (?,?,?,?,?,?)',[crypto.randomUUID(),admin.id,'wallet_credit',userId,`amountNaira=${amountNaira};reference=${reference}`,creditedAt]);
         inserted = true;
       });
     } catch (error) {
