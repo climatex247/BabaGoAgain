@@ -71,7 +71,7 @@ assert.match(walletServer, /This credit was already processed/,'Wallet credit re
 assert.match(walletServer, /INSERT INTO bga_admin_audit[\s\S]*?wallet_credit/,'Administrator credits must create an audit record');
 assert.match(walletServer, /await initializeFeatures\(\)/,'HTTP server startup must wait for feature and administrator schemas');
 const featuresSource = fs.readFileSync(path.join(root,'backend/features.js'),'utf8');
-assert.match(featuresSource, /user_id VARCHAR\(191\) NOT NULL REFERENCES users\(id\)[\s\S]*?role VARCHAR\(50\) NOT NULL/,'MySQL administrator role keys must use indexable types');
+assert.match(featuresSource, /CREATE TABLE IF NOT EXISTS bga_admin_roles \(user_id VARCHAR\(191\) NOT NULL, role VARCHAR\(50\) NOT NULL/,'MySQL administrator role keys must use indexable types');
 assert.match(featuresSource, /return async function initializeFeatures\(\)/,'Feature schema readiness must be awaited during startup');
 assert.match(featuresSource, /CREATE INDEX IF NOT EXISTS idx_bga_messages_conversation/,'Conversation index must be defined');
 assert.match(featuresSource, /ALTER TABLE bga_messages MODIFY COLUMN created_at VARCHAR\(40\)/,'MySQL message timestamp index column must be bounded');
