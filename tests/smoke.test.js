@@ -49,6 +49,7 @@ const walletServer = fs.readFileSync(path.join(root,'backend/server.js'),'utf8')
 for (const route of ["app.get('/api/wallet/me'", "app.post('/api/wallet/payouts'", "app.post('/api/admin/wallet/credit'", "app.post('/api/admin/wallet/payouts/:id/approve'", "app.post('/api/admin/wallet/payouts/:id/check-status'"]) assert.ok(walletServer.includes(route), `Missing wallet route: ${route}`);
 assert.match(walletHtml, /payoutForm/);
 assert.match(adminWalletHtml, /payoutQueue/);
+assert.match(walletServer, /if \(e\.statusCode === 409\)\s*\{\s*return res\.status\(409\)\.json\(/, 'Concurrent payout rejection conflicts must return HTTP 409');
 assert.match(fs.readFileSync(path.join(root,'backend/opay.js'),'utf8'), /\/api\/v3\/transfer\/toBank/);
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bga-db-smoke-'));
