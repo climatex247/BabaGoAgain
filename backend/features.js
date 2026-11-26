@@ -39,17 +39,28 @@ function install(app, ctx) {
   }
   const publitioPublicReady = new Set();
   async function ensurePublitioPublic(mediaUrl) {
-    const parsed = new URL(mediaUrl);
-    if (parsed.protocol !== 'https:' || !(parsed.hostname === 'publit.io' || parsed.hostname.endsWith('.publit.io'))) throw new Error('Invalid Publitio media URL.');
+    let parsed;
+    try { parsed = new URL(String(mediaUrl || '')); }
+    catch { throw new Error('Stored Publitio video URL is invalid.'); }
+    if (parsed.protocol !== 'https:' || !(parsed.hostname === 'publit.io' || parsed.hostname.endsWith('.publit.io'))) {
+      throw new Error('Stored video is not hosted by Publitio.');
+    }
     const match = parsed.pathname.match(/\/([^/]+)\.(?:mp4|webm|ogv)$/i);
-    if (!match) throw new Error('Could not identify the Publitio file.');
+    if (!match) throw new Error('Could not identify the Publitio file ID from its URL.');
     const fileId = match[1];
     if (publitioPublicReady.has(fileId)) return;
     const auth = publitioSignature();
-    const params = new URLSearchParams(auth);
-    const response = await fetch('https://api.publit.io/v1/files/update/' + encodeURIComponent(fileId) + '?' + params.toString(), {method:'PUT', headers:{Accept:'application/json','Content-Type':'application/x-www-form-urlencoded'}, body:new URLSearchParams({privacy:'1'}).toString()});
+    // Publitio documents file-update options as URL query parameters.
+    const params = new URLSearchParams({...auth, privacy:'1'});
+    const response = await fetch('https://api.publit.io/v1/files/update/' + encodeURIComponent(fileId) + '?' + params.toString(), {
+      method:'PUT',
+      headers:{Accept:'application/json'}
+    });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload.success !== true) throw new Error('Publitio could not enable playback for this approved video (HTTP ' + response.status + ').');
+    if (!response.ok || payload.success !== true) {
+      const apiMessage = payload?.error?.message || payload?.message || '';
+      throw new Error('Publitio could not publish this approved video (HTTP ' + response.status + ')' + (apiMessage ? ': ' + String(apiMessage).slice(0,180) : '.'));
+    }
     publitioPublicReady.add(fileId);
   }
   let schemaPromise;
