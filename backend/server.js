@@ -828,7 +828,7 @@ app.get('/api/referrals/me', async (req, res) => {
 
 
 /* Baba Go Again extended social, media, public-profile and founder-admin features. */
-require('./features').install(app, { db, authenticatedUser, frontendPath, referrals });
+const featuresReady = require('./features').install(app, { db, authenticatedUser, frontendPath, referrals });
 
 app.get('/dashboard', (req,res) => res.sendFile(path.join(frontendPath,'dashboard.html')));
 app.get('/profile', (req, res) => res.sendFile(path.join(frontendPath, 'profile.html')));
@@ -1525,6 +1525,8 @@ async function start() {
     await initializeCoreSchema(db);
     console.log('[STARTUP] Core MySQL account schema verified.');
     await db.ready();
+    await featuresReady;
+    console.log('[STARTUP] Feature and administrator schemas verified.');
     console.log('[STARTUP 2] MySQL connection successful.');
     console.log('[DATABASE] MySQL connection verified.');
     console.log('[STARTUP 3] Checking database identity...');
