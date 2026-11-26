@@ -58,43 +58,195 @@ function install(app, ctx) {
     if (!schemaPromise) schemaPromise = (async () => {
       await db.ready();
       const statements = [
-        `CREATE TABLE IF NOT EXISTS bga_conversations (id TEXT PRIMARY KEY, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
-        `CREATE TABLE IF NOT EXISTS bga_conversation_members (conversation_id TEXT NOT NULL REFERENCES bga_conversations(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, joined_at TEXT NOT NULL, PRIMARY KEY(conversation_id,user_id))`,
-        `CREATE TABLE IF NOT EXISTS bga_messages (id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL REFERENCES bga_conversations(id) ON DELETE CASCADE, sender_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 4000), created_at TEXT NOT NULL, read_at TEXT)`,
+        `CREATE TABLE IF NOT EXISTS bga_conversations (id VARCHAR(191) PRIMARY KEY, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
+        `CREATE TABLE IF NOT EXISTS bga_conversation_members (conversation_id VARCHAR(191) NOT NULL, user_id VARCHAR(191) NOT NULL, joined_at TEXT NOT NULL, PRIMARY KEY(conversation_id,user_id))`,
+        `CREATE TABLE IF NOT EXISTS bga_messages (id VARCHAR(191) PRIMARY KEY, conversation_id VARCHAR(191) NOT NULL, sender_id VARCHAR(191) NOT NULL, body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 4000), created_at VARCHAR(40) NOT NULL, read_at VARCHAR(40))`,
+        `CREATE TABLE IF NOT EXISTS bga_notifications (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL, type VARCHAR(50) NOT NULL DEFAULT 'general', title VARCHAR(191) NOT NULL, body TEXT NOT NULL, link VARCHAR(500) NOT NULL DEFAULT '/notifications', is_read TINYINT NOT NULL DEFAULT 0, created_at VARCHAR(40) NOT NULL, read_at VARCHAR(40))`,
         `CREATE INDEX IF NOT EXISTS idx_bga_messages_conversation ON bga_messages(conversation_id,created_at)`,
-        `CREATE TABLE IF NOT EXISTS bga_profile_applications (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, category TEXT NOT NULL, display_name TEXT NOT NULL, biography TEXT NOT NULL, evidence_url TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')), reviewed_by TEXT REFERENCES users(id), reviewed_at TEXT, review_note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, UNIQUE(user_id))`,
-        `CREATE TABLE IF NOT EXISTS bga_public_profiles (id TEXT PRIMARY KEY, user_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE, category TEXT NOT NULL, display_name TEXT NOT NULL, biography TEXT NOT NULL, evidence_url TEXT NOT NULL DEFAULT '', verified INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
-        `CREATE TABLE IF NOT EXISTS bga_follows (follower_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, profile_id TEXT NOT NULL REFERENCES bga_public_profiles(id) ON DELETE CASCADE, created_at TEXT NOT NULL, PRIMARY KEY(follower_id,profile_id))`,
-        `CREATE TABLE IF NOT EXISTS bga_media_posts (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, media_type TEXT NOT NULL CHECK(media_type IN ('audio','video')), title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', media_url TEXT NOT NULL, mime_type TEXT NOT NULL, bytes INTEGER NOT NULL, moderation_status VARCHAR(20) NOT NULL DEFAULT 'pending', reviewed_by TEXT, reviewed_at TEXT, created_at TEXT NOT NULL)`,
-        `CREATE TABLE IF NOT EXISTS bga_media_upload_intents (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, media_type TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', mime_type TEXT NOT NULL, expires_at TEXT NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL)`,
+        `CREATE TABLE IF NOT EXISTS bga_profile_applications (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL, category TEXT NOT NULL, display_name TEXT NOT NULL, biography TEXT NOT NULL, evidence_url VARCHAR(1000) NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')), reviewed_by VARCHAR(191), reviewed_at TEXT, review_note VARCHAR(1000) NOT NULL DEFAULT '', created_at TEXT NOT NULL, UNIQUE(user_id))`,
+        `CREATE TABLE IF NOT EXISTS bga_public_profiles (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL UNIQUE, category TEXT NOT NULL, display_name TEXT NOT NULL, biography TEXT NOT NULL, evidence_url VARCHAR(1000) NOT NULL DEFAULT '', verified INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
+        `CREATE TABLE IF NOT EXISTS bga_follows (follower_id VARCHAR(191) NOT NULL, profile_id VARCHAR(191) NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(follower_id,profile_id))`,
+        `CREATE TABLE IF NOT EXISTS bga_media_posts (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL, media_type VARCHAR(20) NOT NULL CHECK(media_type IN ('audio','video')), title TEXT NOT NULL, description VARCHAR(1500) NOT NULL DEFAULT '', media_url TEXT NOT NULL, mime_type VARCHAR(100) NOT NULL, bytes BIGINT NOT NULL, moderation_status VARCHAR(20) NOT NULL DEFAULT 'pending', reviewed_by VARCHAR(191), reviewed_at VARCHAR(40), created_at VARCHAR(40) NOT NULL)`,
+        `CREATE TABLE IF NOT EXISTS bga_media_upload_intents (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL, media_type TEXT NOT NULL, title TEXT NOT NULL, description VARCHAR(1500) NOT NULL DEFAULT '', mime_type TEXT NOT NULL, expires_at TEXT NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL)`,
         `CREATE INDEX IF NOT EXISTS idx_bga_media_created ON bga_media_posts(media_type,created_at)`,
-        `CREATE TABLE IF NOT EXISTS bga_admin_roles (user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, role TEXT NOT NULL, granted_by TEXT REFERENCES users(id), granted_at TEXT NOT NULL, PRIMARY KEY(user_id,role))`,
-        `CREATE TABLE IF NOT EXISTS bga_admin_audit (id TEXT PRIMARY KEY, actor_id TEXT NOT NULL REFERENCES users(id), action TEXT NOT NULL, target_id TEXT, details TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL)`,
+        `CREATE TABLE IF NOT EXISTS bga_admin_roles (user_id VARCHAR(191) NOT NULL, role VARCHAR(50) NOT NULL, granted_by VARCHAR(191), granted_at TEXT NOT NULL, PRIMARY KEY(user_id,role))`,
+        `CREATE TABLE IF NOT EXISTS bga_admin_audit (id VARCHAR(191) PRIMARY KEY, actor_id VARCHAR(191) NOT NULL, action VARCHAR(100) NOT NULL, target_id VARCHAR(191), details VARCHAR(2000) NOT NULL DEFAULT '', created_at VARCHAR(40) NOT NULL)`,
         `CREATE TABLE IF NOT EXISTS bga_community_reports (
-          id TEXT PRIMARY KEY,
-          reporter_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-          target_type TEXT NOT NULL CHECK(target_type IN ('post','comment','group','event')),
-          target_id TEXT NOT NULL,
+          id VARCHAR(191) PRIMARY KEY,
+          reporter_id VARCHAR(191) NOT NULL,
+          target_type VARCHAR(20) NOT NULL CHECK(target_type IN ('post','comment','group','event')),
+          target_id VARCHAR(191) NOT NULL,
           reason TEXT NOT NULL,
-          details TEXT NOT NULL DEFAULT '',
-          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','dismissed','resolved','hidden')),
-          reviewed_by TEXT REFERENCES users(id),
+          details VARCHAR(1000) NOT NULL DEFAULT '',
+          status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','dismissed','resolved','hidden')),
+          reviewed_by VARCHAR(191),
           reviewed_at TEXT,
-          review_note TEXT NOT NULL DEFAULT '',
-          created_at TEXT NOT NULL,
+          review_note VARCHAR(1000) NOT NULL DEFAULT '',
+          created_at VARCHAR(40) NOT NULL,
           UNIQUE(reporter_id,target_type,target_id)
         )`,
         `CREATE INDEX IF NOT EXISTS idx_bga_reports_queue ON bga_community_reports(status,created_at)`
       ];
       for (const sql of statements) {
-        // Secondary indexes are optional; skip them during initialization.
         if (/^CREATE INDEX IF NOT EXISTS/i.test(sql)) continue;
         await db.run(sql);
       }
-      // Add moderation fields after creating the table (safe for old and new databases).
+      // Add moderation fields before foreign-key checks for older installations.
       try { await db.run("ALTER TABLE bga_media_posts ADD COLUMN moderation_status VARCHAR(20) NOT NULL DEFAULT 'pending'"); } catch (e) { if (!/duplicate|exists|1060|SQLITE_ERROR/i.test(String(e.message))) throw e; }
-      try { await db.run("ALTER TABLE bga_media_posts ADD COLUMN reviewed_by TEXT"); } catch (e) { if (!/duplicate|exists|1060|SQLITE_ERROR/i.test(String(e.message))) throw e; }
-      try { await db.run("ALTER TABLE bga_media_posts ADD COLUMN reviewed_at TEXT"); } catch (e) { if (!/duplicate|exists|1060|SQLITE_ERROR/i.test(String(e.message))) throw e; }
+      try { await db.run("ALTER TABLE bga_media_posts ADD COLUMN reviewed_by VARCHAR(191)"); } catch (e) { if (!/duplicate|exists|1060|SQLITE_ERROR/i.test(String(e.message))) throw e; }
+      try { await db.run("ALTER TABLE bga_media_posts ADD COLUMN reviewed_at VARCHAR(40)"); } catch (e) { if (!/duplicate|exists|1060|SQLITE_ERROR/i.test(String(e.message))) throw e; }
+      // Refuse unsafe narrowing: never truncate existing feature or audit data.
+      const boundedColumns = [
+        ['bga_messages','created_at',40],
+        ['bga_media_posts','media_type',20],
+        ['bga_media_posts','created_at',40],
+        ['bga_media_posts','reviewed_by',191],
+        ['bga_media_posts','reviewed_at',40],
+        ['bga_community_reports','status',20],
+        ['bga_community_reports','target_type',20],
+        ['bga_community_reports','target_id',191],
+        ['bga_community_reports','created_at',40],
+        ['bga_admin_audit','details',2000],
+        ['bga_conversations','id',191],
+        ['bga_public_profiles','id',191],
+        ['bga_profile_applications','evidence_url',1000],
+        ['bga_profile_applications','review_note',1000],
+        ['bga_public_profiles','evidence_url',1000],
+        ['bga_media_posts','description',1500],
+        ['bga_media_upload_intents','description',1500],
+        ['bga_community_reports','details',1000],
+        ['bga_community_reports','review_note',1000],
+        ['bga_conversation_members','conversation_id',191],
+        ['bga_conversation_members','user_id',191],
+        ['bga_messages','conversation_id',191],
+        ['bga_messages','sender_id',191],
+        ['bga_profile_applications','user_id',191],
+        ['bga_profile_applications','reviewed_by',191],
+        ['bga_public_profiles','user_id',191],
+        ['bga_follows','follower_id',191],
+        ['bga_follows','profile_id',191],
+        ['bga_media_posts','user_id',191],
+        ['bga_media_upload_intents','user_id',191],
+        ['bga_admin_roles','user_id',191],
+        ['bga_admin_roles','granted_by',191],
+        ['bga_admin_audit','actor_id',191],
+        ['bga_community_reports','reporter_id',191],
+        ['bga_community_reports','reviewed_by',191]
+      ];
+      for (const [table,column,maxLength] of boundedColumns) {
+        const measured = await db.get('SELECT MAX(CHAR_LENGTH(\`' + column + '\`)) AS max_length FROM \`' + table + '\`');
+        if (Number(measured?.max_length || 0) > maxLength) {
+          throw new Error('Refusing to narrow ' + table + '.' + column + ': existing values exceed ' + maxLength + ' characters.');
+        }
+      }
+      // Existing deployments may have TEXT columns that MySQL cannot index without a prefix.
+      await db.run("ALTER TABLE bga_messages MODIFY COLUMN created_at VARCHAR(40) NOT NULL");
+      await db.run("ALTER TABLE bga_media_posts MODIFY COLUMN media_type VARCHAR(20) NOT NULL");
+      await db.run("ALTER TABLE bga_media_posts MODIFY COLUMN created_at VARCHAR(40) NOT NULL");
+      await db.run("ALTER TABLE bga_media_posts MODIFY COLUMN reviewed_at VARCHAR(40)");
+      await db.run("ALTER TABLE bga_community_reports MODIFY COLUMN status VARCHAR(20) NOT NULL DEFAULT 'pending'");
+      await db.run("ALTER TABLE bga_community_reports MODIFY COLUMN target_type VARCHAR(20) NOT NULL");
+      await db.run("ALTER TABLE bga_community_reports MODIFY COLUMN target_id VARCHAR(191) NOT NULL");
+      await db.run("ALTER TABLE bga_community_reports MODIFY COLUMN created_at VARCHAR(40) NOT NULL");
+      // Widen fields that previously passed through SQLite TEXT defaults; keep every existing value.
+      await db.run("ALTER TABLE bga_profile_applications MODIFY COLUMN evidence_url VARCHAR(1000) NOT NULL DEFAULT ''");
+      await db.run("ALTER TABLE bga_profile_applications MODIFY COLUMN review_note VARCHAR(1000) NOT NULL DEFAULT ''");
+      await db.run("ALTER TABLE bga_public_profiles MODIFY COLUMN evidence_url VARCHAR(1000) NOT NULL DEFAULT ''");
+      await db.run("ALTER TABLE bga_media_posts MODIFY COLUMN description VARCHAR(1500) NOT NULL DEFAULT ''");
+      await db.run("ALTER TABLE bga_media_upload_intents MODIFY COLUMN description VARCHAR(1500) NOT NULL DEFAULT ''");
+      await db.run("ALTER TABLE bga_community_reports MODIFY COLUMN details VARCHAR(1000) NOT NULL DEFAULT ''");
+      await db.run("ALTER TABLE bga_community_reports MODIFY COLUMN review_note VARCHAR(1000) NOT NULL DEFAULT ''");
+      // Match the actual users.id character set and collation before adding string foreign keys.
+      // Existing installations may use a different MySQL default collation.
+      const userIdColumn = await db.get(
+        "SELECT DATA_TYPE,CHARACTER_MAXIMUM_LENGTH,CHARACTER_SET_NAME,COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='users' AND COLUMN_NAME='id'"
+      );
+      if (!userIdColumn || String(userIdColumn.DATA_TYPE).toLowerCase() !== 'varchar' ||
+          Number(userIdColumn.CHARACTER_MAXIMUM_LENGTH) !== 191 ||
+          !/^[A-Za-z0-9_]+$/.test(String(userIdColumn.CHARACTER_SET_NAME || '')) ||
+          !/^[A-Za-z0-9_]+$/.test(String(userIdColumn.COLLATION_NAME || ''))) {
+        throw new Error('users.id must be VARCHAR(191) with a valid MySQL character set and collation before feature foreign keys can be installed.');
+      }
+      const idCharset = userIdColumn.CHARACTER_SET_NAME;
+      const idCollation = userIdColumn.COLLATION_NAME;
+      // All IDs are bounded and validated above; nullable reviewer/grantor columns stay nullable.
+      const featureFkColumns = [
+        ['bga_conversations','id','NOT NULL'],
+        ['bga_public_profiles','id','NOT NULL'],
+        ['bga_conversation_members','conversation_id','NOT NULL'],['bga_conversation_members','user_id','NOT NULL'],
+        ['bga_messages','conversation_id','NOT NULL'],['bga_messages','sender_id','NOT NULL'],
+        ['bga_notifications','user_id','NOT NULL'],
+        ['bga_profile_applications','user_id','NOT NULL'],['bga_profile_applications','reviewed_by','NULL'],
+        ['bga_public_profiles','user_id','NOT NULL'],
+        ['bga_follows','follower_id','NOT NULL'],['bga_follows','profile_id','NOT NULL'],
+        ['bga_media_posts','user_id','NOT NULL'],['bga_media_posts','reviewed_by','NULL'],
+        ['bga_media_upload_intents','user_id','NOT NULL'],
+        ['bga_admin_roles','user_id','NOT NULL'],['bga_admin_roles','granted_by','NULL'],
+        ['bga_admin_audit','actor_id','NOT NULL'],
+        ['bga_community_reports','reporter_id','NOT NULL'],['bga_community_reports','reviewed_by','NULL']
+      ];
+      for (const [table,column,nullability] of featureFkColumns) {
+        const current = await db.get(
+          'SELECT DATA_TYPE,CHARACTER_MAXIMUM_LENGTH,CHARACTER_SET_NAME,COLLATION_NAME,IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?',
+          [table,column]
+        );
+        if (!current) throw new Error('Required foreign-key column is missing: ' + table + '.' + column);
+        const nullable = nullability === 'NULL';
+        if (String(current.DATA_TYPE).toLowerCase() === 'varchar' &&
+            Number(current.CHARACTER_MAXIMUM_LENGTH) === 191 &&
+            current.CHARACTER_SET_NAME === idCharset &&
+            current.COLLATION_NAME === idCollation &&
+            (current.IS_NULLABLE === 'YES') === nullable) continue;
+        await db.run('ALTER TABLE \`' + table + '\` MODIFY COLUMN \`' + column + '\` VARCHAR(191) CHARACTER SET ' + idCharset + ' COLLATE ' + idCollation + ' ' + nullability);
+      }
+      // MySQL ignores column-level REFERENCES clauses. Add real InnoDB foreign keys
+      // explicitly, after validating legacy rows so startup never silently deletes data.
+      const featureForeignKeys = [
+        ['bga_conversation_members','fk_bga_conv_members_conversation','conversation_id','bga_conversations','id','CASCADE'],
+        ['bga_conversation_members','fk_bga_conv_members_user','user_id','users','id','CASCADE'],
+        ['bga_messages','fk_bga_messages_conversation','conversation_id','bga_conversations','id','CASCADE'],
+        ['bga_messages','fk_bga_messages_sender','sender_id','users','id','CASCADE'],
+        ['bga_notifications','fk_bga_notifications_user','user_id','users','id','CASCADE'],
+        ['bga_profile_applications','fk_bga_profile_apps_user','user_id','users','id','CASCADE'],
+        ['bga_profile_applications','fk_bga_profile_apps_reviewer','reviewed_by','users','id','SET NULL'],
+        ['bga_public_profiles','fk_bga_public_profiles_user','user_id','users','id','CASCADE'],
+        ['bga_follows','fk_bga_follows_follower','follower_id','users','id','CASCADE'],
+        ['bga_follows','fk_bga_follows_profile','profile_id','bga_public_profiles','id','CASCADE'],
+        ['bga_media_posts','fk_bga_media_posts_user','user_id','users','id','CASCADE'],
+        ['bga_media_posts','fk_bga_media_posts_reviewer','reviewed_by','users','id','SET NULL'],
+        ['bga_media_upload_intents','fk_bga_media_intents_user','user_id','users','id','CASCADE'],
+        ['bga_admin_roles','fk_bga_admin_roles_user','user_id','users','id','CASCADE'],
+        ['bga_admin_roles','fk_bga_admin_roles_grantor','granted_by','users','id','SET NULL'],
+        ['bga_admin_audit','fk_bga_admin_audit_actor','actor_id','users','id','RESTRICT'],
+        ['bga_community_reports','fk_bga_reports_reporter','reporter_id','users','id','CASCADE'],
+        ['bga_community_reports','fk_bga_reports_reviewer','reviewed_by','users','id','SET NULL']
+      ];
+      for (const [table,constraint,column,parent,parentColumn,onDelete] of featureForeignKeys) {
+        const exists = await db.get(
+          "SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA=DATABASE() AND TABLE_NAME=? AND CONSTRAINT_NAME=? AND CONSTRAINT_TYPE='FOREIGN KEY'",
+          [table,constraint]
+        );
+        if (exists) continue;
+        const orphans = await db.get(
+          'SELECT COUNT(*) AS orphan_count FROM \`' + table + '\` child LEFT JOIN \`' + parent + '\` parent ON child.\`' + column + '\`=parent.\`' + parentColumn + '\` WHERE child.\`' + column + '\` IS NOT NULL AND parent.\`' + parentColumn + '\` IS NULL'
+        );
+        if (Number(orphans?.orphan_count || 0) > 0) {
+          throw new Error('Cannot add ' + constraint + ': existing orphan rows must be reviewed before enabling this foreign key.');
+        }
+        await db.run('ALTER TABLE \`' + table + '\` ADD CONSTRAINT \`' + constraint + '\` FOREIGN KEY (\`' + column + '\`) REFERENCES \`' + parent + '\` (\`' + parentColumn + '\`) ON DELETE ' + onDelete);
+      }
+      // MySQL does not support SQLite's CREATE INDEX IF NOT EXISTS syntax.
+      for (const sql of statements.filter(statement => /^CREATE INDEX IF NOT EXISTS/i.test(statement))) {
+        const mysqlIndexSql = sql.replace(/^CREATE INDEX IF NOT EXISTS/i, 'CREATE INDEX');
+        try {
+          await db.run(mysqlIndexSql);
+        } catch (error) {
+          if (Number(error.errno) !== 1061 && error.code !== 'ER_DUP_KEYNAME') throw error;
+        }
+      }
+      await db.run('ALTER TABLE bga_notifications MODIFY COLUMN body TEXT NOT NULL');
+      // Widen legacy audit details safely; this preserves existing audit records.
+      await db.run("ALTER TABLE bga_admin_audit MODIFY COLUMN details VARCHAR(2000) NOT NULL DEFAULT ''");
 
     })().catch(e => { schemaPromise = null; throw e; });
     await schemaPromise;
@@ -270,26 +422,12 @@ function install(app, ctx) {
     catch(e){console.error('message read',e);res.status(500).json({success:false,message:'Could not load messages.'});}
   });
   app.post('/api/messages/conversations/:id', async (req,res) => {
-    try { const me=await user(req,res);if(!me)return;const body=safe(req.body.body,4000);if(!body)return res.status(400).json({success:false,message:'Message cannot be empty.'});const membership=await db.get('SELECT 1 AS ok FROM bga_conversation_members WHERE conversation_id=? AND user_id=?',[req.params.id,me.id]);if(!membership)return res.status(404).json({success:false,message:'Conversation not found.'});const msg=id(),now=date();await db.transaction(async tx =>{await tx.run('INSERT INTO bga_messages (id,conversation_id,sender_id,body,created_at) VALUES (?,?,?,?,?)',[msg,req.params.id,me.id,body,now]);await tx.run('UPDATE bga_conversations SET updated_at=? WHERE id=?',[now,req.params.id]);});try{await db.run("CREATE TABLE IF NOT EXISTS bga_notifications (id TEXT PRIMARY KEY,user_id TEXT NOT NULL,type TEXT NOT NULL DEFAULT 'general',title TEXT NOT NULL,body TEXT NOT NULL DEFAULT '',link TEXT NOT NULL DEFAULT '/notifications',is_read INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,read_at TEXT)");const recipients=await db.all('SELECT user_id AS userId FROM bga_conversation_members WHERE conversation_id=? AND user_id<>?',[req.params.id,me.id]);for(const recipient of recipients){await db.run('INSERT INTO bga_notifications (id,user_id,type,title,body,link,is_read,created_at) VALUES (?,?,?,?,?,?,0,?)',[id(),recipient.userId,'message','New message from '+safe(me.full_name,100),body.slice(0,300),'/messages',now]);}}catch(notificationError){console.error('message notification',notificationError);}res.status(201).json({success:true,data:{id:msg,body,createdAt:now,senderId:me.id,senderName:me.full_name}}); }
+    try { const me=await user(req,res);if(!me)return;const body=safe(req.body.body,4000);if(!body)return res.status(400).json({success:false,message:'Message cannot be empty.'});const membership=await db.get('SELECT 1 AS ok FROM bga_conversation_members WHERE conversation_id=? AND user_id=?',[req.params.id,me.id]);if(!membership)return res.status(404).json({success:false,message:'Conversation not found.'});const msg=id(),now=date();await db.transaction(async tx =>{await tx.run('INSERT INTO bga_messages (id,conversation_id,sender_id,body,created_at) VALUES (?,?,?,?,?)',[msg,req.params.id,me.id,body,now]);await tx.run('UPDATE bga_conversations SET updated_at=? WHERE id=?',[now,req.params.id]);});try{const recipients=await db.all('SELECT user_id AS userId FROM bga_conversation_members WHERE conversation_id=? AND user_id<>?',[req.params.id,me.id]);for(const recipient of recipients){await db.run('INSERT INTO bga_notifications (id,user_id,type,title,body,link,is_read,created_at) VALUES (?,?,?,?,?,?,0,?)',[id(),recipient.userId,'message','New message from '+safe(me.full_name,100),body.slice(0,300),'/messages',now]);}}catch(notificationError){console.error('message notification',notificationError);}res.status(201).json({success:true,data:{id:msg,body,createdAt:now,senderId:me.id,senderName:me.full_name}}); }
     catch(e){console.error('message send',e);res.status(500).json({success:false,message:'Could not send message.'});}
   });
 
 
   // Baba Go Again notification centre
-  const ensureNotificationTable = async () => db.run(`
-    CREATE TABLE IF NOT EXISTS bga_notifications (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      type TEXT NOT NULL DEFAULT 'general',
-      title TEXT NOT NULL,
-      body TEXT NOT NULL DEFAULT '',
-      link TEXT NOT NULL DEFAULT '/notifications',
-      is_read INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      read_at TEXT
-    )
-  `);
-
   app.get('/notifications', (req,res) =>
     res.sendFile(path.join(frontendPath,'notifications.html'))
   );
@@ -298,7 +436,7 @@ function install(app, ctx) {
     try {
       const me = await user(req,res);
       if (!me) return;
-      await ensureNotificationTable();
+
       const rows = await db.all(
         'SELECT id,type,title,body,link,is_read AS isRead,created_at AS createdAt,read_at AS readAt FROM bga_notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 100',
         [me.id]
@@ -318,7 +456,7 @@ function install(app, ctx) {
     try {
       const me = await user(req,res);
       if (!me) return;
-      await ensureNotificationTable();
+
       await db.run(
         'UPDATE bga_notifications SET is_read=1,read_at=? WHERE user_id=? AND is_read=0',
         [date(),me.id]
@@ -334,7 +472,7 @@ function install(app, ctx) {
     try {
       const me = await user(req,res);
       if (!me) return;
-      await ensureNotificationTable();
+
       const result = await db.run(
         'UPDATE bga_notifications SET is_read=1,read_at=? WHERE id=? AND user_id=?',
         [date(),req.params.id,me.id]
@@ -350,7 +488,7 @@ function install(app, ctx) {
     try {
       const me = await user(req,res);
       if (!me) return;
-      await ensureNotificationTable();
+
       await db.run(
         'DELETE FROM bga_notifications WHERE id=? AND user_id=?',
         [req.params.id,me.id]
@@ -366,7 +504,7 @@ function install(app, ctx) {
     try {
       const me = await user(req,res);
       if (!me) return;
-      await ensureNotificationTable();
+
       await db.run('DELETE FROM bga_notifications WHERE user_id=?',[me.id]);
       res.json({success:true,message:'Notifications cleared.'});
     } catch(e) {
@@ -570,14 +708,32 @@ app.get('/api/public-profiles', async (req,res) => {
       }
       const now=date();
       await db.transaction(async tx=>{
+        // Lock and consume the upload intent before creating the media row.
+        // Two simultaneous completion requests must never publish the same intent twice.
+        const lockedIntent = await tx.get(
+          "SELECT id FROM bga_media_upload_intents WHERE id=? AND user_id=? AND status='pending' AND expires_at>? FOR UPDATE",
+          [token,me.id,date()]
+        );
+        if (!lockedIntent) {
+          throw Object.assign(new Error('This upload session has already been completed or expired.'), { statusCode: 409 });
+        }
+        const consumed = await tx.run(
+          "UPDATE bga_media_upload_intents SET status='completed' WHERE id=? AND user_id=? AND status='pending'",
+          [token,me.id]
+        );
+        if (consumed.changes !== 1) {
+          throw Object.assign(new Error('This upload session has already been completed or expired.'), { statusCode: 409 });
+        }
         await tx.run(
           'INSERT INTO bga_media_posts (id,user_id,media_type,title,description,media_url,mime_type,bytes,moderation_status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
           [token,me.id,intent.media_type,intent.title,intent.description,mediaUrl,intent.mime_type,Number(asset.size),'pending',now]
         );
-        await tx.run("UPDATE bga_media_upload_intents SET status='completed' WHERE id=? AND status='pending'",[token]);
       });
       res.status(201).json({success:true,message:'Upload complete. Your media is awaiting moderator approval.'});
     } catch(e) {
+      if (e.statusCode === 409) {
+        return res.status(409).json({success:false,message:e.message});
+      }
       console.error('Publitio upload confirmation failed:',e.message);
       res.status(502).json({success:false,message:'The upload reached Publitio but could not be verified. Please contact support before retrying.'});
     }
@@ -685,8 +841,11 @@ app.get('/api/public-profiles', async (req,res) => {
   // A safe configuration diagnostic: never returns secret values.
   app.get('/api/security/status', async (req,res) => {try{const me=await user(req,res);if(!me)return;const r=await roles(me.id);if(!r.includes('founder'))return res.status(403).json({success:false,message:'Founder access required.'});res.json({success:true,data:{sessionSecretConfigured:Boolean(process.env.SESSION_SECRET&&process.env.SESSION_SECRET.length>=32&&process.env.SESSION_SECRET!=='CHANGE_THIS_SESSION_SECRET_BEFORE_PUBLIC_DEPLOYMENT'),walletEncryptionKeyConfigured:Boolean(process.env.WALLET_ENCRYPTION_KEY&&process.env.WALLET_ENCRYPTION_KEY.trim().length>=32),founderEmailConfigured:Boolean(process.env.BGA_FOUNDER_EMAIL),opayPayoutsEnabled:process.env.OPAY_PAYOUT_ENABLED==='true',opayMerchantConfigured:Boolean(process.env.OPAY_MERCHANT_ID),opayPrivateKeyConfigured:Boolean(process.env.OPAY_PRIVATE_KEY),opayUsesHttps:Boolean(/^https:\/\//i.test(process.env.OPAY_BASE_URL||'')),productionCookieSecure:process.env.COOKIE_SECURE==='true'}});}catch(e){res.status(500).json({success:false,message:'Could not inspect security configuration.'});}});
 
-  // Ensure migrations are attempted during boot; each endpoint also awaits the same promise.
-  ensureSchema().then(bootstrapFounder).catch(e => console.error('Baba Go Again feature schema initialization failed:', e.message));
+  // Defer schema creation until core MySQL tables (including users) exist.
+  return async function initializeFeatures() {
+    await ensureSchema();
+    await bootstrapFounder();
+  };
 }
 
 module.exports = { install, CATEGORIES, ADMIN_ROLES };

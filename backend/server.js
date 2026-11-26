@@ -828,7 +828,7 @@ app.get('/api/referrals/me', async (req, res) => {
 
 
 /* Baba Go Again extended social, media, public-profile and founder-admin features. */
-require('./features').install(app, { db, authenticatedUser, frontendPath, referrals });
+const initializeFeatures = require('./features').install(app, { db, authenticatedUser, frontendPath, referrals });
 
 app.get('/dashboard', (req,res) => res.sendFile(path.join(frontendPath,'dashboard.html')));
 app.get('/profile', (req, res) => res.sendFile(path.join(frontendPath, 'profile.html')));
@@ -921,7 +921,6 @@ app.post('/api/community/posts/:id/comments', async (req,res) => {
     await db.run('INSERT INTO post_comments (id,post_id,user_id,body,created_at) VALUES (?,?,?,?,?)',[id,post.id,user.id,body,createdAt]);
     if(post.userId!==user.id){
       try {
-        await db.run("CREATE TABLE IF NOT EXISTS bga_notifications (id TEXT PRIMARY KEY,user_id TEXT NOT NULL,type TEXT NOT NULL DEFAULT 'general',title TEXT NOT NULL,body TEXT NOT NULL DEFAULT '',link TEXT NOT NULL DEFAULT '/notifications',is_read INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,read_at TEXT)");
         await db.run('INSERT INTO bga_notifications (id,user_id,type,title,body,link,is_read,created_at) VALUES (?,?,?,?,?,?,0,?)',[crypto.randomUUID(),post.userId,'community','New comment from '+String(user.full_name||'A member').slice(0,100),body.slice(0,300),'/community',createdAt]);
       } catch(notificationError) { console.error('Community comment notification failed:',notificationError); }
     }
@@ -960,7 +959,6 @@ app.post('/api/community/groups/:id/join', async (req,res) => {
     const result=await db.run('INSERT IGNORE INTO group_members (group_id,user_id,joined_at) VALUES (?,?,?)',[group.id,user.id,joinedAt]);
     if(result.changes && String(group.creatorId)!==String(user.id)){
       try {
-        await db.run("CREATE TABLE IF NOT EXISTS bga_notifications (id TEXT PRIMARY KEY,user_id TEXT NOT NULL,type TEXT NOT NULL DEFAULT 'general',title TEXT NOT NULL,body TEXT NOT NULL DEFAULT '',link TEXT NOT NULL DEFAULT '/notifications',is_read INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,read_at TEXT)");
         await db.run('INSERT INTO bga_notifications (id,user_id,type,title,body,link,is_read,created_at) VALUES (?,?,?,?,?,?,0,?)',[crypto.randomUUID(),group.creatorId,'community','New group member','Someone joined your group: '+group.name.slice(0,100),'/community',joinedAt]);
       } catch(notificationError) { console.error('Group join notification failed:',notificationError); }
     }
@@ -1014,7 +1012,6 @@ app.post('/api/community/events/:id/attend', async (req,res) => {
     const result=await db.run('INSERT IGNORE INTO event_attendees (event_id,user_id,joined_at) VALUES (?,?,?)',[event.id,user.id,joinedAt]);
     if(result.changes && String(event.creatorId)!==String(user.id)){
       try {
-        await db.run("CREATE TABLE IF NOT EXISTS bga_notifications (id TEXT PRIMARY KEY,user_id TEXT NOT NULL,type TEXT NOT NULL DEFAULT 'general',title TEXT NOT NULL,body TEXT NOT NULL DEFAULT '',link TEXT NOT NULL DEFAULT '/notifications',is_read INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,read_at TEXT)");
         await db.run('INSERT INTO bga_notifications (id,user_id,type,title,body,link,is_read,created_at) VALUES (?,?,?,?,?,?,0,?)',[crypto.randomUUID(),event.creatorId,'community','New event attendee','Someone registered for your event: '+event.title.slice(0,120),'/community',joinedAt]);
       } catch(notificationError) { console.error('Event attendance notification failed:',notificationError); }
     }
@@ -1113,8 +1110,13 @@ async function requireWalletAdmin(req, res) {
   }
 }
 async function walletBalanceKobo(userId) {
-  const row = await db.get('SELECT COALESCE(SUM(amount_kobo),0) AS balance FROM wallet_transactions WHERE user_id=?', [userId]);
-  return Number(row?.balance || 0);
+  const row = await db.get("SELECT CAST(COALESCE(SUM(amount_kobo),0) AS CHAR) AS balance FROM wallet_transactions WHERE user_id=?", [userId]);
+  return BigInt(row?.balance || '0').toString();
+}
+function walletBalanceResponse(exactBalance) {
+  const exact = BigInt(exactBalance);
+  const safe = exact <= BigInt(Number.MAX_SAFE_INTEGER) && exact >= BigInt(Number.MIN_SAFE_INTEGER);
+  return { balanceKobo: safe ? Number(exact) : null, balanceKoboExact: exact.toString() };
 }
 async function refundPayoutIfNeeded(payoutId, adminId, reason) {
   return db.transaction(async tx => {
@@ -1139,10 +1141,10 @@ app.get('/api/wallet/me', async (req,res) => {
     let roles = []; try { roles = JSON.parse(user.roles_json || '[]'); } catch {}
     const appRow = await db.get("SELECT state FROM volunteer_applications WHERE user_id=?", [user.id]);
     if (!roles.includes('Volunteer') && appRow?.state !== 'approved') return res.status(403).json({success:false,message:'The earnings wallet is available to approved volunteers. Select Volunteer during registration or contact the coordination team.'});
-    const balanceKobo = await walletBalanceKobo(user.id);
-    const transactions = await db.all('SELECT id,type,amount_kobo AS amountKobo,reference,description,created_at AS createdAt FROM wallet_transactions WHERE user_id=? ORDER BY created_at DESC LIMIT 50',[user.id]);
-    const payouts = await db.all("SELECT id,amount_kobo AS amountKobo,recipient_type AS recipientType,status,opay_reference AS reference,opay_order_no AS providerOrderNo,failure_reason AS failureReason,requested_at AS requestedAt,updated_at AS updatedAt FROM wallet_payouts WHERE user_id=? ORDER BY requested_at DESC LIMIT 25",[user.id]);
-    res.json({success:true,data:{balanceKobo,transactions,payouts,opayConfigured:opay.config().enabled}});
+    const balanceKoboExact = await walletBalanceKobo(user.id);
+    const transactions = await db.all("SELECT id,type,CAST(amount_kobo AS CHAR) AS amountKobo,reference,description,created_at AS createdAt FROM wallet_transactions WHERE user_id=? ORDER BY created_at DESC LIMIT 50",[user.id]);
+    const payouts = await db.all("SELECT id,CAST(amount_kobo AS CHAR) AS amountKobo,recipient_type AS recipientType,status,opay_reference AS reference,opay_order_no AS providerOrderNo,failure_reason AS failureReason,requested_at AS requestedAt,updated_at AS updatedAt FROM wallet_payouts WHERE user_id=? ORDER BY requested_at DESC LIMIT 25",[user.id]);
+    res.json({success:true,data:{...walletBalanceResponse(balanceKoboExact),transactions,payouts,opayConfigured:opay.config().enabled}});
   } catch(e) { console.error('Wallet summary failed:',e.message); res.status(500).json({success:false,message:'Could not load volunteer wallet.'}); }
 });
 
@@ -1154,7 +1156,8 @@ app.post('/api/wallet/payouts', async (req,res) => {
     if (!roles.includes('Volunteer') && appRow?.state !== 'approved') return res.status(403).json({success:false,message:'Only registered or approved volunteers can request payouts.'});
     if (!process.env.WALLET_ENCRYPTION_KEY || process.env.WALLET_ENCRYPTION_KEY.trim().length < 32) return res.status(503).json({success:false,message:'Wallet payout security is not configured yet. Contact the administrator.'});
     const amountNaira = Number(req.body.amountNaira);
-    if (!Number.isSafeInteger(amountNaira) || amountNaira < 100 || amountNaira > 5000000) return res.status(400).json({success:false,message:'Enter a whole-naira amount between ₦100 and ₦5,000,000.'});
+    const requestedAmountKobo = amountNaira * 100;
+    if (!Number.isSafeInteger(amountNaira) || amountNaira < 100 || !Number.isSafeInteger(requestedAmountKobo)) return res.status(400).json({success:false,message:'Enter a valid whole-naira payout amount of at least ₦100.'});
     const recipientType = req.body.recipientType === 'opay_wallet' ? 'opay_wallet' : req.body.recipientType === 'bank' ? 'bank' : '';
     const recipientName = safeText(req.body.recipientName,100);
     if (!recipientName || !recipientType) return res.status(400).json({success:false,message:'Enter the recipient name and choose OPay wallet or bank transfer.'});
@@ -1171,9 +1174,23 @@ app.post('/api/wallet/payouts', async (req,res) => {
     }
     const encrypted = encryptRecipient(recipient), payoutId = crypto.randomUUID(), now = new Date().toISOString(), ref = 'BGA-' + payoutId.replace(/-/g,'').slice(0,24).toUpperCase();
     await db.transaction(async tx => {
-      const row = await tx.get('SELECT COALESCE(SUM(amount_kobo),0) AS balance FROM wallet_transactions WHERE user_id=?', [user.id]);
-      const balance = Number(row?.balance || 0), amountKobo = amountNaira * 100;
-      if (balance < amountKobo) throw Object.assign(new Error('Your available volunteer balance is insufficient for this payout.'),{statusCode:400});
+      // Serialize payout reservations for this account. Without this row lock,
+      // two concurrent requests can both read the same available balance and
+      // each reserve it before either transaction commits.
+      const lockedUser = await tx.get(
+        'SELECT id FROM users WHERE id=? FOR UPDATE',
+        [user.id]
+      );
+      if (!lockedUser) {
+        throw Object.assign(new Error('Your account could not be verified for this payout.'), {statusCode:404});
+      }
+
+      const row = await tx.get(
+        "SELECT CAST(COALESCE(SUM(amount_kobo),0) AS CHAR) AS balance FROM wallet_transactions WHERE user_id=?",
+        [user.id]
+      );
+      const balance = BigInt(row?.balance || '0'), amountKobo = requestedAmountKobo;
+      if (balance < BigInt(amountKobo)) throw Object.assign(new Error('Your available volunteer balance is insufficient for this payout.'),{statusCode:400});
       await tx.run('INSERT INTO wallet_payouts (id,user_id,amount_kobo,recipient_type,recipient_name,recipient_data_encrypted,status,opay_reference,requested_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)', [payoutId,user.id,amountKobo,recipientType,recipientName,encrypted,'pending',ref,now,now]);
       await tx.run('INSERT INTO wallet_transactions (id,user_id,type,amount_kobo,reference,description,related_payout_id,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?)', [crypto.randomUUID(),user.id,'payout_hold',-amountKobo,'PAYOUT-HOLD-'+payoutId,'Reserved for volunteer payout',payoutId,user.id,now]);
     });
@@ -1195,12 +1212,6 @@ app.get('/api/admin/wallet/members', async (req,res) => {
 
 async function sendBgaWalletNotification(userId, type, title, body) {
   try {
-    await db.run(`CREATE TABLE IF NOT EXISTS bga_notifications (
-      id TEXT PRIMARY KEY, user_id TEXT NOT NULL, type TEXT NOT NULL DEFAULT 'general',
-      title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '',
-      link TEXT NOT NULL DEFAULT '/notifications',
-      is_read INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, read_at TEXT
-    )`);
     await db.run(
       'INSERT INTO bga_notifications (id,user_id,type,title,body,link,created_at) VALUES (?,?,?,?,?,?,?)',
       [crypto.randomUUID(), userId, type, title, body, '/wallet', new Date().toISOString()]
@@ -1214,21 +1225,54 @@ app.post('/api/admin/wallet/credit', async (req,res) => {
   try {
     const admin = await requireWalletAdmin(req,res); if (!admin) return;
     const userId = safeText(req.body.userId,80), amountNaira = Number(req.body.amountNaira), description = safeText(req.body.description || 'Volunteer programme credit',200);
-    if (!userId || !Number.isSafeInteger(amountNaira) || amountNaira < 1 || amountNaira > 5000000) return res.status(400).json({success:false,message:'Select a member and enter a credit between ₦1 and ₦5,000,000.'});
-    const user = await db.get("SELECT id,roles_json FROM users WHERE id=? AND status='active' AND email_verified=1",[userId]);
+    const amountKobo = amountNaira * 100;
+    const idempotencyKey = String(req.body.idempotencyKey || '').trim().toLowerCase();
+    // No campaign/programme cap: only enforce exact integer precision for the kobo ledger.
+    if (!userId || !Number.isSafeInteger(amountNaira) || amountNaira < 1 || !Number.isSafeInteger(amountKobo)) return res.status(400).json({success:false,message:'Select a member and enter a valid whole-naira credit amount.'});
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(idempotencyKey)) return res.status(400).json({success:false,message:'A valid credit request key is required. Refresh the page and try again.'});
+    const user = await db.get("SELECT id FROM users WHERE id=? AND status='active' AND email_verified=1",[userId]);
     if (!user) return res.status(404).json({success:false,message:'Verified active member not found.'});
-    const id = crypto.randomUUID(), now = new Date().toISOString(), reference = 'BGA-CREDIT-' + id.replace(/-/g,'').toUpperCase();
-    await db.run('INSERT INTO wallet_transactions (id,user_id,type,amount_kobo,reference,description,created_by,created_at) VALUES (?,?,?,?,?,?,?,?)',[id,userId,'volunteer_credit',amountNaira*100,reference,description,admin.id,now]);
-      await sendBgaWalletNotification(userId,'wallet','Wallet credited',`Your volunteer wallet was credited with ₦${amountNaira.toLocaleString()}.`);
-    res.status(201).json({success:true,message:'Volunteer wallet credited.',data:{reference,amountNaira,balanceKobo:await walletBalanceKobo(userId)}});
-  } catch(e) { console.error('Wallet credit failed:',e.message); res.status(500).json({success:false,message:'Could not credit volunteer wallet.'}); }
+    const reference = 'BGA-CREDIT-' + idempotencyKey.replace(/-/g,'').toUpperCase();
+    let inserted = false;
+    try {
+      await db.transaction(async tx => {
+        const existing = await tx.get('SELECT id,user_id,type,amount_kobo,description,created_by FROM wallet_transactions WHERE reference=?',[reference]);
+        if (existing) {
+          const matches = existing.user_id === userId && existing.type === 'volunteer_credit' &&
+            String(existing.amount_kobo) === String(amountKobo) &&
+            existing.description === description && existing.created_by === admin.id;
+          if (!matches) throw Object.assign(new Error('This credit request key was already used for different details. Refresh the page before creating a new credit.'),{statusCode:409});
+          return;
+        }
+        const creditedAt = new Date().toISOString();
+        await tx.run('INSERT INTO wallet_transactions (id,user_id,type,amount_kobo,reference,description,created_by,created_at) VALUES (?,?,?,?,?,?,?,?)',[crypto.randomUUID(),userId,'volunteer_credit',amountKobo,reference,description,admin.id,creditedAt]);
+        await tx.run('INSERT INTO bga_admin_audit (id,actor_id,action,target_id,details,created_at) VALUES (?,?,?,?,?,?)',[crypto.randomUUID(),admin.id,'wallet_credit',userId,`amountNaira=${amountNaira};reference=${reference}`,creditedAt]);
+        inserted = true;
+      });
+    } catch (error) {
+      if (error.statusCode) throw error;
+      // A concurrent retry may race on the unique reference. Resolve it as the same credit.
+      const existing = await db.get('SELECT id,user_id,type,amount_kobo,description,created_by FROM wallet_transactions WHERE reference=?',[reference]);
+      if (!existing) throw error;
+      const matches = existing.user_id === userId && existing.type === 'volunteer_credit' &&
+        String(existing.amount_kobo) === String(amountKobo) &&
+        existing.description === description && existing.created_by === admin.id;
+      if (!matches) throw Object.assign(new Error('This credit request key was already used for different details.'),{statusCode:409});
+    }
+    if (inserted) await sendBgaWalletNotification(userId,'wallet','Wallet credited',`Your volunteer wallet was credited with ₦${amountNaira.toLocaleString()}.`);
+    res.status(inserted ? 201 : 200).json({success:true,message:inserted?'Volunteer wallet credited.':'This credit was already processed; no duplicate credit was added.',data:{reference,amountNaira,...walletBalanceResponse(await walletBalanceKobo(userId)),duplicate:!inserted}});
+  } catch(e) {
+    if (e.statusCode === 409) return res.status(409).json({success:false,message:e.message});
+    console.error('Wallet credit failed:',e.message);
+    res.status(500).json({success:false,message:'Could not credit volunteer wallet.'});
+  }
 });
 
 app.get('/api/admin/wallet/payouts', async (req,res) => {
   try {
     const admin = await requireWalletAdmin(req,res); if (!admin) return;
     const status = ['pending','processing','completed','failed','rejected'].includes(req.query.status) ? req.query.status : '';
-    const sql = `SELECT p.id,p.user_id AS userId,p.amount_kobo AS amountKobo,p.recipient_type AS recipientType,p.recipient_name AS recipientName,p.status,p.opay_reference AS reference,p.opay_order_no AS providerOrderNo,p.failure_reason AS failureReason,p.requested_at AS requestedAt,u.full_name AS volunteerName,u.email AS volunteerEmail FROM wallet_payouts p JOIN users u ON u.id=p.user_id ${status ? 'WHERE p.status=?' : ''} ORDER BY p.requested_at DESC LIMIT 100`;
+    const sql = `SELECT p.id,p.user_id AS userId,CAST(p.amount_kobo AS CHAR) AS amountKobo,p.recipient_type AS recipientType,p.recipient_name AS recipientName,p.status,p.opay_reference AS reference,p.opay_order_no AS providerOrderNo,p.failure_reason AS failureReason,p.requested_at AS requestedAt,u.full_name AS volunteerName,u.email AS volunteerEmail FROM wallet_payouts p JOIN users u ON u.id=p.user_id ${status ? 'WHERE p.status=?' : ''} ORDER BY p.requested_at DESC LIMIT 100`;
     const data = await db.all(sql,status ? [status] : []);
     res.json({success:true,data});
   } catch(e) { console.error('Payout queue failed:',e.message); res.status(500).json({success:false,message:'Could not load payout queue.'}); }
@@ -1248,7 +1292,13 @@ app.post('/api/admin/wallet/payouts/:id/reject', async (req,res) => {
     });
     await sendBgaWalletNotification(payout.user_id,'wallet','Payout rejected','Your payout request was rejected. The reserved balance has been returned to your wallet.');
       res.json({success:true,message:'Payout rejected and reserved balance returned to volunteer.'});
-  } catch(e) { console.error('Payout rejection failed:',e.message); res.status(500).json({success:false,message:'Could not reject payout.'}); }
+  } catch(e) {
+    if (e.statusCode === 409) {
+      return res.status(409).json({success:false,message:e.message});
+    }
+    console.error('Payout rejection failed:',e.message);
+    return res.status(500).json({success:false,message:'Could not reject payout.'});
+  }
 });
 
 app.post('/api/admin/wallet/payouts/:id/approve', async (req,res) => {
@@ -1266,8 +1316,17 @@ app.post('/api/admin/wallet/payouts/:id/approve', async (req,res) => {
     const amountNaira = payout.amount_kobo / 100;
     const response = await opay.createTransfer({reference:payout.opay_reference,amountNaira,recipientType:payout.recipient_type,recipientName:recipient.recipientName,phoneNumber:recipient.phoneNumber,bankCode:recipient.bankCode,bankAccountNumber:recipient.bankAccountNumber,reason:'Baba Go Again volunteer payout'});
     if (String(response.code) !== '00000') {
-      await refundPayoutIfNeeded(payout.id,admin.id,String(response.message || 'OPay rejected transfer'));
-      return res.status(502).json({success:false,message:'OPay rejected the transfer. The held balance was returned.',providerCode:String(response.code || ''),providerMessage:String(response.message || '').slice(0,160)});
+      // A non-success API code is not proof that funds were not sent.
+      // Keep the hold and require a provider status check before any refund.
+      await db.run(
+        "UPDATE wallet_payouts SET failure_reason=?,updated_at=? WHERE id=? AND status='processing'",
+        [`OPay response requires reconciliation (code: ${String(response.code || 'UNKNOWN').slice(0,40)}).`,new Date().toISOString(),payout.id]
+      );
+      return res.status(502).json({
+        success:false,
+        message:'OPay did not confirm a successful submission. The payout remains processing and the held balance has NOT been refunded. Check the transfer status with OPay before taking further action.',
+        providerCode:String(response.code || '').slice(0,40)
+      });
     }
     const orderNo = safeText(response.data?.orderNo || response.data?.orderNumber || '',100) || null;
     await db.run("UPDATE wallet_payouts SET opay_order_no=?,updated_at=? WHERE id=? AND status='processing'",[orderNo,new Date().toISOString(),payout.id]);
@@ -1290,12 +1349,18 @@ app.post('/api/admin/wallet/payouts/:id/check-status', async (req,res) => {
     if (String(response.code) !== '00000') return res.status(502).json({success:false,message:'OPay status query did not succeed. The payout remains processing.'});
     const status = String(response.data?.status || response.data?.orderStatus || '').toUpperCase();
     if (['SUCCESS','SUCCESSFUL','COMPLETED'].includes(status)) {
-      await db.run("UPDATE wallet_payouts SET status='completed',failure_reason=NULL,updated_at=?,processed_by=? WHERE id=? AND status='processing'",[new Date().toISOString(),admin.id,payout.id]);
+      const changed = await db.run("UPDATE wallet_payouts SET status='completed',failure_reason=NULL,updated_at=?,processed_by=? WHERE id=? AND status='processing'",[new Date().toISOString(),admin.id,payout.id]);
+      if (!changed.changes) return res.status(409).json({success:false,message:'The payout status changed during reconciliation. Refresh the queue before taking further action.'});
       await sendBgaWalletNotification(payout.user_id,'wallet','Payout completed','OPay confirmed that your payout was successful.');
       return res.json({success:true,message:'OPay confirmed the payout as successful.',data:{status:'completed'}});
     }
     if (['FAIL','FAILED','CANCEL','CANCELLED','REJECTED'].includes(status)) {
-      await refundPayoutIfNeeded(payout.id,admin.id,String(response.data?.errorMsg || response.data?.message || 'OPay reported a failed transfer'));
+      const refunded = await refundPayoutIfNeeded(payout.id,admin.id,String(response.data?.errorMsg || response.data?.message || 'OPay reported a failed transfer'));
+      if (!refunded) {
+        const current = await db.get('SELECT status FROM wallet_payouts WHERE id=?',[payout.id]);
+        if (current?.status !== 'failed') return res.status(409).json({success:false,message:'The payout status changed during reconciliation. Refresh the queue before taking further action.'});
+        return res.json({success:true,message:'This failed payout was already refunded; no duplicate refund was added.',data:{status:'failed',duplicate:true}});
+      }
       await sendBgaWalletNotification(payout.user_id,'wallet','Payout failed','The payout failed. The held balance has been returned to your wallet.');
       return res.json({success:true,message:'OPay reported a failed payout; the held balance was returned.',data:{status:'failed'}});
     }
@@ -1473,6 +1538,8 @@ async function start() {
     await initializeCoreSchema(db);
     console.log('[STARTUP] Core MySQL account schema verified.');
     await db.ready();
+    await initializeFeatures();
+    console.log('[STARTUP] Feature and administrator schemas verified.');
     console.log('[STARTUP 2] MySQL connection successful.');
     console.log('[DATABASE] MySQL connection verified.');
     console.log('[STARTUP 3] Checking database identity...');

@@ -7,7 +7,9 @@
     "start": "node server.js",
     "dev": "node server.js",
     "test": "node ../tests/smoke.test.js",
-    "preflight": "node --check server.js && node --check referrals.js && node --check database-mysql.js && node --check features.js && node --check opay.js && node --check ../frontend/profile.js && node --check ../frontend/register.js && npm test"
+    "wallet:mysql:preflight": "node scripts/wallet-mysql-preflight.js",
+    "preflight": "node --check server.js && node --check referrals.js && node --check database-mysql.js && node --check features.js && node --check opay.js && node --check scripts/wallet-mysql-preflight.js && node --check scripts/mysql-schema-integration.js && node --check ../frontend/profile.js && node --check ../frontend/register.js && npm test",
+    "mysql:schema:integration": "node scripts/mysql-schema-integration.js"
   },
   "keywords": [],
   "author": "",

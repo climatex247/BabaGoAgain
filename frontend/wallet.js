@@ -2,7 +2,12 @@
 document.addEventListener('DOMContentLoaded', () => {
   const $ = id => document.getElementById(id);
   const message = $('walletMessage');
-  const naira = kobo => new Intl.NumberFormat('en-NG',{style:'currency',currency:'NGN',maximumFractionDigits:2}).format(Number(kobo||0)/100);
+  const naira = kobo => {
+    let amount = BigInt(kobo || 0), negative = amount < 0n;
+    if (negative) amount = -amount;
+    const whole = amount / 100n, fraction = (amount % 100n).toString().padStart(2,'0');
+    return (negative ? '-' : '') + '₦' + new Intl.NumberFormat('en-NG').format(whole) + '.' + fraction;
+  };
   async function api(path, options={}) {
     const response = await fetch(path,{credentials:'same-origin',headers:{Accept:'application/json','Content-Type':'application/json',...(options.headers||{})},...options});
     const data = await response.json().catch(()=>({}));
@@ -14,13 +19,13 @@ document.addEventListener('DOMContentLoaded', () => {
   async function load() {
     try {
       const result=await api('/api/wallet/me'); const d=result.data;
-      $('walletBalance').textContent=naira(d.balanceKobo);
+      $('walletBalance').textContent=naira(d.balanceKoboExact ?? d.balanceKobo ?? 0);
       const payouts=$('payoutList');payouts.replaceChildren();
       if(!d.payouts.length)payouts.append(card('No payout requests','Your payout history will appear here.'));
       d.payouts.forEach(p=>payouts.append(card(`${naira(p.amountKobo)} — ${p.status}`,`${p.recipientType==='opay_wallet'?'OPay wallet':'Bank account'} · Ref ${p.reference}`,`${new Date(p.requestedAt).toLocaleString()}${p.failureReason?' · '+p.failureReason:''}`)));
       const txs=$('transactionList');txs.replaceChildren();
       if(!d.transactions.length)txs.append(card('No transactions yet','Volunteer programme credits and payout holds will appear here.'));
-      d.transactions.forEach(t=>txs.append(card(`${t.amountKobo>=0?'+':'−'}${naira(Math.abs(t.amountKobo))} · ${t.type.replaceAll('_',' ')}`,t.description,`${new Date(t.createdAt).toLocaleString()} · ${t.reference}`)));
+      d.transactions.forEach(t=>{const amount=BigInt(t.amountKobo);txs.append(card(`${amount>=0n?'+':'−'}${naira(amount>=0n?amount:-amount)} · ${t.type.replaceAll('_',' ')}`,t.description,`${new Date(t.createdAt).toLocaleString()} · ${t.reference}`));});
       if(!d.opayConfigured) message.textContent='Wallet view is available. Automated OPay transfers are not enabled until the administrator configures approved merchant credentials.';
     } catch(e) { message.textContent=e.message; }
   }

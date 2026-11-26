@@ -91,7 +91,62 @@ async function initializeCoreSchema(db) {
     }
   }
 
-  console.log('[DATABASE] Core member and authentication tables verified.');
+  // Additive wallet schema bootstrap. Existing tables and wallet records are untouched.
+  await db.run(`
+    CREATE TABLE IF NOT EXISTS volunteer_applications (
+      id VARCHAR(191) NOT NULL PRIMARY KEY,
+      user_id VARCHAR(191) NOT NULL,
+      interests TEXT NOT NULL,
+      availability VARCHAR(4000) NOT NULL DEFAULT '',
+      state VARCHAR(4000) NOT NULL DEFAULT 'pending',
+      created_at VARCHAR(40) NOT NULL,
+      UNIQUE KEY uq_volunteer_applications_user (user_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  await db.run(`
+    CREATE TABLE IF NOT EXISTS wallet_transactions (
+      id VARCHAR(191) NOT NULL PRIMARY KEY,
+      user_id VARCHAR(191) NOT NULL,
+      type VARCHAR(40) NOT NULL,
+      amount_kobo BIGINT NOT NULL,
+      reference VARCHAR(191) NOT NULL,
+      description VARCHAR(4000) NOT NULL DEFAULT '',
+      related_payout_id VARCHAR(191) NULL,
+      created_by VARCHAR(191) NULL,
+      created_at VARCHAR(40) NOT NULL,
+      UNIQUE KEY uq_wallet_transactions_reference (reference),
+      KEY idx_wallet_transactions_user_created (user_id, created_at),
+      CONSTRAINT chk_wallet_transactions_type CHECK (type IN ('volunteer_credit','payout_hold','payout_refund','admin_adjustment')),
+      CONSTRAINT chk_wallet_transactions_amount CHECK (amount_kobo <> 0)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  await db.run(`
+    CREATE TABLE IF NOT EXISTS wallet_payouts (
+      id VARCHAR(191) NOT NULL PRIMARY KEY,
+      user_id VARCHAR(191) NOT NULL,
+      amount_kobo BIGINT NOT NULL,
+      recipient_type VARCHAR(40) NOT NULL,
+      recipient_name VARCHAR(191) NOT NULL,
+      recipient_data_encrypted TEXT NOT NULL,
+      status VARCHAR(40) NOT NULL DEFAULT 'pending',
+      opay_reference VARCHAR(191) NOT NULL,
+      opay_order_no VARCHAR(191) NULL,
+      failure_reason TEXT NULL,
+      requested_at VARCHAR(40) NOT NULL,
+      updated_at VARCHAR(40) NOT NULL,
+      processed_by VARCHAR(191) NULL,
+      UNIQUE KEY uq_wallet_payouts_opay_reference (opay_reference),
+      KEY idx_wallet_payouts_status_requested (status, requested_at),
+      KEY idx_wallet_payouts_user_requested (user_id, requested_at),
+      CONSTRAINT chk_wallet_payouts_amount CHECK (amount_kobo > 0),
+      CONSTRAINT chk_wallet_payouts_recipient CHECK (recipient_type IN ('opay_wallet','bank')),
+      CONSTRAINT chk_wallet_payouts_status CHECK (status IN ('pending','processing','completed','failed','rejected'))
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  console.log('[DATABASE] Core member, authentication, volunteer and wallet tables verified.');
 }
 
 module.exports = { initializeCoreSchema };

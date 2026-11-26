@@ -1,0 +1,64 @@
+name: Baba Go Again wallet security checks
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'tests/**'
+      - '.github/workflows/wallet-security.yml'
+  push:
+    branches:
+      - fix/wallet-credit-no-campaign-cap
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'tests/**'
+      - '.github/workflows/wallet-security.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  wallet-security:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root-password
+          MYSQL_DATABASE: bga_wallet_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pci-root-password"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+    env:
+      MYSQL_HOST: 127.0.0.1
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: bga_wallet_test
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ci-root-password
+      MYSQL_SSL: 'false'
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+      - name: Run syntax and smoke checks
+        working-directory: backend
+        run: npm run preflight
+      - name: Run isolated MySQL 8.4 schema integration checks
+        working-directory: backend
+        run: npm run mysql:schema:integration
