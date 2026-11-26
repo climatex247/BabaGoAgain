@@ -107,6 +107,8 @@ function install(app, ctx) {
         ['bga_community_reports','target_id',191],
         ['bga_community_reports','created_at',40],
         ['bga_admin_audit','details',2000],
+        ['bga_conversations','id',191],
+        ['bga_public_profiles','id',191],
         ['bga_profile_applications','evidence_url',1000],
         ['bga_profile_applications','review_note',1000],
         ['bga_public_profiles','evidence_url',1000],
