@@ -73,8 +73,8 @@ function install(app, ctx) {
         `CREATE TABLE IF NOT EXISTS bga_community_reports (
           id TEXT PRIMARY KEY,
           reporter_id VARCHAR(191) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-          target_type TEXT NOT NULL CHECK(target_type IN ('post','comment','group','event')),
-          target_id TEXT NOT NULL,
+          target_type VARCHAR(20) NOT NULL CHECK(target_type IN ('post','comment','group','event')),
+          target_id VARCHAR(191) NOT NULL,
           reason TEXT NOT NULL,
           details TEXT NOT NULL DEFAULT '',
           status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','dismissed','resolved','hidden')),
@@ -95,6 +95,8 @@ function install(app, ctx) {
       await db.run("ALTER TABLE bga_media_posts MODIFY COLUMN media_type VARCHAR(20) NOT NULL");
       await db.run("ALTER TABLE bga_media_posts MODIFY COLUMN created_at VARCHAR(40) NOT NULL");
       await db.run("ALTER TABLE bga_community_reports MODIFY COLUMN status VARCHAR(20) NOT NULL DEFAULT 'pending'");
+      await db.run("ALTER TABLE bga_community_reports MODIFY COLUMN target_type VARCHAR(20) NOT NULL");
+      await db.run("ALTER TABLE bga_community_reports MODIFY COLUMN target_id VARCHAR(191) NOT NULL");
       await db.run("ALTER TABLE bga_community_reports MODIFY COLUMN created_at VARCHAR(40) NOT NULL");
       // MySQL does not support SQLite's CREATE INDEX IF NOT EXISTS syntax.
       for (const sql of statements.filter(statement => /^CREATE INDEX IF NOT EXISTS/i.test(statement))) {
