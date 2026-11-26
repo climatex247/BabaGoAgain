@@ -959,7 +959,6 @@ app.post('/api/community/groups/:id/join', async (req,res) => {
     const result=await db.run('INSERT IGNORE INTO group_members (group_id,user_id,joined_at) VALUES (?,?,?)',[group.id,user.id,joinedAt]);
     if(result.changes && String(group.creatorId)!==String(user.id)){
       try {
-        await db.run("CREATE TABLE IF NOT EXISTS bga_notifications (id TEXT PRIMARY KEY,user_id TEXT NOT NULL,type TEXT NOT NULL DEFAULT 'general',title TEXT NOT NULL,body TEXT NOT NULL,link TEXT NOT NULL DEFAULT '/notifications',is_read INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,read_at TEXT)");
         await db.run('INSERT INTO bga_notifications (id,user_id,type,title,body,link,is_read,created_at) VALUES (?,?,?,?,?,?,0,?)',[crypto.randomUUID(),group.creatorId,'community','New group member','Someone joined your group: '+group.name.slice(0,100),'/community',joinedAt]);
       } catch(notificationError) { console.error('Group join notification failed:',notificationError); }
     }
@@ -1013,7 +1012,6 @@ app.post('/api/community/events/:id/attend', async (req,res) => {
     const result=await db.run('INSERT IGNORE INTO event_attendees (event_id,user_id,joined_at) VALUES (?,?,?)',[event.id,user.id,joinedAt]);
     if(result.changes && String(event.creatorId)!==String(user.id)){
       try {
-        await db.run("CREATE TABLE IF NOT EXISTS bga_notifications (id TEXT PRIMARY KEY,user_id TEXT NOT NULL,type TEXT NOT NULL DEFAULT 'general',title TEXT NOT NULL,body TEXT NOT NULL,link TEXT NOT NULL DEFAULT '/notifications',is_read INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,read_at TEXT)");
         await db.run('INSERT INTO bga_notifications (id,user_id,type,title,body,link,is_read,created_at) VALUES (?,?,?,?,?,?,0,?)',[crypto.randomUUID(),event.creatorId,'community','New event attendee','Someone registered for your event: '+event.title.slice(0,120),'/community',joinedAt]);
       } catch(notificationError) { console.error('Event attendance notification failed:',notificationError); }
     }
