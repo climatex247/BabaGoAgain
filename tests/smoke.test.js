@@ -89,7 +89,8 @@ assert.match(featuresSource, /CREATE TABLE IF NOT EXISTS bga_notifications/,'Not
 assert.match(featuresSource, /ADD CONSTRAINT.*FOREIGN KEY/,'Feature relationships must be enforced by real table-level foreign keys');
 assert.doesNotMatch(featuresSource, /VARCHAR\(191\) NOT NULL REFERENCES/,'MySQL must not rely on ignored inline REFERENCES syntax');
 assert.match(featuresSource, /is_read TINYINT NOT NULL DEFAULT 0/,'Notification read state must use a MySQL integer type');
-assert.match(walletServer, /is_read TINYINT NOT NULL DEFAULT 0/,'Wallet notification schema must be MySQL compatible');
+assert.match(featuresSource, /is_read TINYINT NOT NULL DEFAULT 0/,'Shared notification schema must be MySQL compatible');
+assert.doesNotMatch(walletServer, /CREATE TABLE IF NOT EXISTS bga_notifications/,'Wallet routes must rely on the shared startup notification schema');
 assert.match(walletServer, /The payout status changed during reconciliation/,'OPay status reconciliation must detect concurrent state changes');
 assert.match(walletServer, /This failed payout was already refunded/,'Repeated failed-status checks must not add another refund');
 assert.match(featuresSource, /CREATE INDEX'\)/,'Feature indexes must be created with MySQL-compatible syntax');
