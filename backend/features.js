@@ -90,6 +90,23 @@ function install(app, ctx) {
         if (/^CREATE INDEX IF NOT EXISTS/i.test(sql)) continue;
         await db.run(sql);
       }
+      // Refuse unsafe narrowing: never truncate existing feature or audit data.
+      const boundedColumns = [
+        ['bga_messages','created_at',40],
+        ['bga_media_posts','media_type',20],
+        ['bga_media_posts','created_at',40],
+        ['bga_community_reports','status',20],
+        ['bga_community_reports','target_type',20],
+        ['bga_community_reports','target_id',191],
+        ['bga_community_reports','created_at',40],
+        ['bga_admin_audit','details',2000]
+      ];
+      for (const [table,column,maxLength] of boundedColumns) {
+        const measured = await db.get('SELECT MAX(CHAR_LENGTH(\`' + column + '\`)) AS max_length FROM \`' + table + '\`');
+        if (Number(measured?.max_length || 0) > maxLength) {
+          throw new Error('Refusing to narrow ' + table + '.' + column + ': existing values exceed ' + maxLength + ' characters.');
+        }
+      }
       // Existing deployments may have TEXT columns that MySQL cannot index without a prefix.
       await db.run("ALTER TABLE bga_messages MODIFY COLUMN created_at VARCHAR(40) NOT NULL");
       await db.run("ALTER TABLE bga_media_posts MODIFY COLUMN media_type VARCHAR(20) NOT NULL");
