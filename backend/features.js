@@ -105,7 +105,23 @@ function install(app, ctx) {
         ['bga_community_reports','target_type',20],
         ['bga_community_reports','target_id',191],
         ['bga_community_reports','created_at',40],
-        ['bga_admin_audit','details',2000]
+        ['bga_admin_audit','details',2000],
+        ['bga_conversation_members','conversation_id',191],
+        ['bga_conversation_members','user_id',191],
+        ['bga_messages','conversation_id',191],
+        ['bga_messages','sender_id',191],
+        ['bga_profile_applications','user_id',191],
+        ['bga_profile_applications','reviewed_by',191],
+        ['bga_public_profiles','user_id',191],
+        ['bga_follows','follower_id',191],
+        ['bga_follows','profile_id',191],
+        ['bga_media_posts','user_id',191],
+        ['bga_media_upload_intents','user_id',191],
+        ['bga_admin_roles','user_id',191],
+        ['bga_admin_roles','granted_by',191],
+        ['bga_admin_audit','actor_id',191],
+        ['bga_community_reports','reporter_id',191],
+        ['bga_community_reports','reviewed_by',191]
       ];
       for (const [table,column,maxLength] of boundedColumns) {
         const measured = await db.get('SELECT MAX(CHAR_LENGTH(\`' + column + '\`)) AS max_length FROM \`' + table + '\`');
@@ -123,6 +139,23 @@ function install(app, ctx) {
       await db.run("ALTER TABLE bga_community_reports MODIFY COLUMN target_type VARCHAR(20) NOT NULL");
       await db.run("ALTER TABLE bga_community_reports MODIFY COLUMN target_id VARCHAR(191) NOT NULL");
       await db.run("ALTER TABLE bga_community_reports MODIFY COLUMN created_at VARCHAR(40) NOT NULL");
+      // Match the users table's utf8mb4_unicode_ci collation before adding string foreign keys.
+      // All IDs are bounded and validated above; nullable reviewer/grantor columns stay nullable.
+      const featureFkColumns = [
+        ['bga_conversation_members','conversation_id','NOT NULL'],['bga_conversation_members','user_id','NOT NULL'],
+        ['bga_messages','conversation_id','NOT NULL'],['bga_messages','sender_id','NOT NULL'],
+        ['bga_profile_applications','user_id','NOT NULL'],['bga_profile_applications','reviewed_by','NULL'],
+        ['bga_public_profiles','user_id','NOT NULL'],
+        ['bga_follows','follower_id','NOT NULL'],['bga_follows','profile_id','NOT NULL'],
+        ['bga_media_posts','user_id','NOT NULL'],['bga_media_posts','reviewed_by','NULL'],
+        ['bga_media_upload_intents','user_id','NOT NULL'],
+        ['bga_admin_roles','user_id','NOT NULL'],['bga_admin_roles','granted_by','NULL'],
+        ['bga_admin_audit','actor_id','NOT NULL'],
+        ['bga_community_reports','reporter_id','NOT NULL'],['bga_community_reports','reviewed_by','NULL']
+      ];
+      for (const [table,column,nullability] of featureFkColumns) {
+        await db.run('ALTER TABLE \`' + table + '\` MODIFY COLUMN \`' + column + '\` VARCHAR(191) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci ' + nullability);
+      }
       // MySQL ignores column-level REFERENCES clauses. Add real InnoDB foreign keys
       // explicitly, after validating legacy rows so startup never silently deletes data.
       const featureForeignKeys = [
