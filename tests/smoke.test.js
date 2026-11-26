@@ -6,7 +6,7 @@ const { spawnSync } = require('node:child_process');
 const root = path.resolve(__dirname, '..');
 
 for (const file of [
-  'backend/server.js', 'backend/database.js', 'backend/opay.js', 'frontend/register.js', 'frontend/wallet.js', 'frontend/admin-wallet.js',
+  'backend/server.js', 'backend/database.js', 'backend/schema-mysql.js', 'backend/opay.js', 'frontend/register.js', 'frontend/wallet.js', 'frontend/admin-wallet.js',
   'frontend/community.js', 'frontend/login.js', 'frontend/forgot-password.js',
   'frontend/profile-photo.js', 'frontend/reset-password.js', 'frontend/referrals.js'
 ]) {
@@ -31,6 +31,10 @@ assert.match(registerJs, /referralCode:\s*\(referralCodeInput/, 'registration mu
 assert.match(registerJs, /referralParams\.get\('ref'\)/, 'registration must read referral links');
 const server = fs.readFileSync(path.join(root, 'backend/server.js'), 'utf8');
 const database = fs.readFileSync(path.join(root, 'backend/database.js'), 'utf8');
+const mysqlSchema = fs.readFileSync(path.join(root, 'backend/schema-mysql.js'), 'utf8');
+for (const table of ['volunteer_applications','wallet_transactions','wallet_payouts']) {
+  assert.match(mysqlSchema, new RegExp('CREATE TABLE IF NOT EXISTS ' + table), `MySQL startup must bootstrap ${table}`);
+}
 for (const route of [
   "app.get('/api/community/feed'", "app.post('/api/community/posts'",
   "app.get('/api/community/groups'", "app.post('/api/community/groups/:id/join'",
