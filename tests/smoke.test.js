@@ -76,8 +76,8 @@ assert.match(featuresSource, /ALTER TABLE bga_messages MODIFY COLUMN created_at 
 assert.match(featuresSource, /ALTER TABLE bga_media_posts MODIFY COLUMN media_type VARCHAR\(20\)/,'MySQL media category index column must be bounded');
 assert.match(featuresSource, /ALTER TABLE bga_community_reports MODIFY COLUMN target_id VARCHAR\(191\)/,'MySQL report unique-key column must be bounded');
 assert.match(featuresSource, /Refusing to narrow/,'Schema migration must refuse to truncate existing values');
-assert.doesNotMatch(featuresSource, /\\bid TEXT PRIMARY KEY/i,'MySQL feature tables must not use TEXT primary keys');
-assert.match(featuresSource, /id VARCHAR\\(191\\) PRIMARY KEY/,'Feature table identifiers must use bounded MySQL primary-key columns');
+assert.doesNotMatch(featuresSource, /\bid TEXT PRIMARY KEY/i,'MySQL feature tables must not use TEXT primary keys');
+assert.match(featuresSource, /id VARCHAR\(191\) PRIMARY KEY/,'Feature table identifiers must use bounded MySQL primary-key columns');
 assert.match(featuresSource, /is_read TINYINT NOT NULL DEFAULT 0/,'Notification read state must use a MySQL integer type');
 assert.match(walletServer, /is_read TINYINT NOT NULL DEFAULT 0/,'Wallet notification schema must be MySQL compatible');
 assert.match(walletServer, /The payout status changed during reconciliation/,'OPay status reconciliation must detect concurrent state changes');
