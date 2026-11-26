@@ -61,6 +61,7 @@ function install(app, ctx) {
         `CREATE TABLE IF NOT EXISTS bga_conversations (id VARCHAR(191) PRIMARY KEY, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
         `CREATE TABLE IF NOT EXISTS bga_conversation_members (conversation_id VARCHAR(191) NOT NULL, user_id VARCHAR(191) NOT NULL, joined_at TEXT NOT NULL, PRIMARY KEY(conversation_id,user_id))`,
         `CREATE TABLE IF NOT EXISTS bga_messages (id VARCHAR(191) PRIMARY KEY, conversation_id VARCHAR(191) NOT NULL, sender_id VARCHAR(191) NOT NULL, body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 4000), created_at VARCHAR(40) NOT NULL, read_at VARCHAR(40))`,
+        `CREATE TABLE IF NOT EXISTS bga_notifications (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL, type VARCHAR(50) NOT NULL DEFAULT 'general', title VARCHAR(191) NOT NULL, body TEXT NOT NULL DEFAULT '', link VARCHAR(500) NOT NULL DEFAULT '/notifications', is_read TINYINT NOT NULL DEFAULT 0, created_at VARCHAR(40) NOT NULL, read_at VARCHAR(40))`,
         `CREATE INDEX IF NOT EXISTS idx_bga_messages_conversation ON bga_messages(conversation_id,created_at)`,
         `CREATE TABLE IF NOT EXISTS bga_profile_applications (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL, category TEXT NOT NULL, display_name TEXT NOT NULL, biography TEXT NOT NULL, evidence_url TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')), reviewed_by VARCHAR(191), reviewed_at TEXT, review_note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, UNIQUE(user_id))`,
         `CREATE TABLE IF NOT EXISTS bga_public_profiles (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL UNIQUE, category TEXT NOT NULL, display_name TEXT NOT NULL, biography TEXT NOT NULL, evidence_url TEXT NOT NULL DEFAULT '', verified INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
@@ -144,6 +145,7 @@ function install(app, ctx) {
       const featureFkColumns = [
         ['bga_conversation_members','conversation_id','NOT NULL'],['bga_conversation_members','user_id','NOT NULL'],
         ['bga_messages','conversation_id','NOT NULL'],['bga_messages','sender_id','NOT NULL'],
+        ['bga_notifications','user_id','NOT NULL'],
         ['bga_profile_applications','user_id','NOT NULL'],['bga_profile_applications','reviewed_by','NULL'],
         ['bga_public_profiles','user_id','NOT NULL'],
         ['bga_follows','follower_id','NOT NULL'],['bga_follows','profile_id','NOT NULL'],
@@ -163,6 +165,7 @@ function install(app, ctx) {
         ['bga_conversation_members','fk_bga_conv_members_user','user_id','users','id','CASCADE'],
         ['bga_messages','fk_bga_messages_conversation','conversation_id','bga_conversations','id','CASCADE'],
         ['bga_messages','fk_bga_messages_sender','sender_id','users','id','CASCADE'],
+        ['bga_notifications','fk_bga_notifications_user','user_id','users','id','CASCADE'],
         ['bga_profile_applications','fk_bga_profile_apps_user','user_id','users','id','CASCADE'],
         ['bga_profile_applications','fk_bga_profile_apps_reviewer','reviewed_by','users','id','SET NULL'],
         ['bga_public_profiles','fk_bga_public_profiles_user','user_id','users','id','CASCADE'],
