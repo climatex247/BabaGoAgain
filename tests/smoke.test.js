@@ -78,6 +78,9 @@ assert.match(featuresSource, /ALTER TABLE bga_messages MODIFY COLUMN created_at 
 assert.match(featuresSource, /ALTER TABLE bga_media_posts MODIFY COLUMN media_type VARCHAR\(20\)/,'MySQL media category index column must be bounded');
 assert.match(featuresSource, /ALTER TABLE bga_community_reports MODIFY COLUMN target_id VARCHAR\(191\)/,'MySQL report unique-key column must be bounded');
 assert.match(featuresSource, /Refusing to narrow/,'Schema migration must refuse to truncate existing values');
+assert.match(featuresSource, /evidence_url VARCHAR\(1000\) NOT NULL DEFAULT ''/,'Profile evidence links must not be narrowed to 191 characters');
+assert.match(featuresSource, /description VARCHAR\(1500\) NOT NULL DEFAULT ''/,'Media descriptions must retain their supported length');
+assert.match(featuresSource, /details VARCHAR\(1000\) NOT NULL DEFAULT ''/,'Community report details must retain their supported length');
 assert.doesNotMatch(featuresSource, /\bid TEXT PRIMARY KEY/i,'MySQL feature tables must not use TEXT primary keys');
 assert.match(featuresSource, /id VARCHAR\(191\) PRIMARY KEY/,'Feature table identifiers must use bounded MySQL primary-key columns');
 assert.match(featuresSource, /const featureForeignKeys = \[/,'Feature relationships must have explicit MySQL foreign-key migrations');
