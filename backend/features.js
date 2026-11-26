@@ -157,6 +157,8 @@ function install(app, ctx) {
       // Match the users table's utf8mb4_unicode_ci collation before adding string foreign keys.
       // All IDs are bounded and validated above; nullable reviewer/grantor columns stay nullable.
       const featureFkColumns = [
+        ['bga_conversations','id','NOT NULL'],
+        ['bga_public_profiles','id','NOT NULL'],
         ['bga_conversation_members','conversation_id','NOT NULL'],['bga_conversation_members','user_id','NOT NULL'],
         ['bga_messages','conversation_id','NOT NULL'],['bga_messages','sender_id','NOT NULL'],
         ['bga_notifications','user_id','NOT NULL'],
