@@ -1316,8 +1316,17 @@ app.post('/api/admin/wallet/payouts/:id/approve', async (req,res) => {
     const amountNaira = payout.amount_kobo / 100;
     const response = await opay.createTransfer({reference:payout.opay_reference,amountNaira,recipientType:payout.recipient_type,recipientName:recipient.recipientName,phoneNumber:recipient.phoneNumber,bankCode:recipient.bankCode,bankAccountNumber:recipient.bankAccountNumber,reason:'Baba Go Again volunteer payout'});
     if (String(response.code) !== '00000') {
-      await refundPayoutIfNeeded(payout.id,admin.id,String(response.message || 'OPay rejected transfer'));
-      return res.status(502).json({success:false,message:'OPay rejected the transfer. The held balance was returned.',providerCode:String(response.code || ''),providerMessage:String(response.message || '').slice(0,160)});
+      // A non-success API code is not proof that funds were not sent.
+      // Keep the hold and require a provider status check before any refund.
+      await db.run(
+        "UPDATE wallet_payouts SET failure_reason=?,updated_at=? WHERE id=? AND status='processing'",
+        [`OPay response requires reconciliation (code: ${String(response.code || 'UNKNOWN').slice(0,40)}).`,new Date().toISOString(),payout.id]
+      );
+      return res.status(502).json({
+        success:false,
+        message:'OPay did not confirm a successful submission. The payout remains processing and the held balance has NOT been refunded. Check the transfer status with OPay before taking further action.',
+        providerCode:String(response.code || '').slice(0,40)
+      });
     }
     const orderNo = safeText(response.data?.orderNo || response.data?.orderNumber || '',100) || null;
     await db.run("UPDATE wallet_payouts SET opay_order_no=?,updated_at=? WHERE id=? AND status='processing'",[orderNo,new Date().toISOString(),payout.id]);
