@@ -1,0 +1,46 @@
+{
+  "id": "/",
+  "name": "Baba Go Again",
+  "short_name": "BabaGoAgain",
+  "description": "Baba Go Again community and campaign application",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#eaf2ff",
+  "theme_color": "#0645ad",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/assets/bga-app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Member Login",
+      "short_name": "Login",
+      "url": "/login",
+      "icons": [
+        {
+          "src": "/assets/bga-app-icon.svg",
+          "sizes": "any",
+          "type": "image/svg+xml"
+        }
+      ]
+    },
+    {
+      "name": "Register",
+      "short_name": "Register",
+      "url": "/register",
+      "icons": [
+        {
+          "src": "/assets/bga-app-icon.svg",
+          "sizes": "any",
+          "type": "image/svg+xml"
+        }
+      ]
+    }
+  ]
+}
