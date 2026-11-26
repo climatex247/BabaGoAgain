@@ -93,6 +93,9 @@ assert.match(featuresSource, /CREATE TABLE IF NOT EXISTS bga_notifications/,'Not
 assert.equal((featuresSource.match(/CREATE TABLE IF NOT EXISTS bga_notifications/g)||[]).length,1,'Notifications must have one shared startup schema, not request-time DDL');
 assert.doesNotMatch(walletServer, /CREATE TABLE IF NOT EXISTS bga_notifications/,'Community and wallet routes must use the shared notification schema');
 assert.match(featuresSource, /ADD CONSTRAINT.*FOREIGN KEY/,'Feature relationships must be enforced by real table-level foreign keys');
+assert.match(featuresSource, /SELECT id FROM bga_media_upload_intents WHERE id=\? AND user_id=\? AND status='pending' AND expires_at>\? FOR UPDATE/,'Media upload completion must lock and re-check the upload intent');
+assert.match(featuresSource, /if \(consumed\.changes !== 1\)/,'Concurrent media upload completion must consume an upload intent exactly once');
+assert.match(featuresSource, /e\.statusCode === 409/,'Reused media upload completion requests must return a conflict');
 assert.doesNotMatch(featuresSource, /VARCHAR\(191\) NOT NULL REFERENCES/,'MySQL must not rely on ignored inline REFERENCES syntax');
 assert.match(featuresSource, /is_read TINYINT NOT NULL DEFAULT 0/,'Notification read state must use a MySQL integer type');
 assert.match(featuresSource, /is_read TINYINT NOT NULL DEFAULT 0/,'Shared notification schema must be MySQL compatible');
