@@ -37,8 +37,14 @@ self.addEventListener('fetch', event => {
   if (url.origin !== self.location.origin) return;
 
   // Never cache APIs, authentication, wallet, admin, user data, or media uploads.
+  const privatePaths = [
+    '/login', '/register', '/dashboard', '/profile', '/referrals',
+    '/community', '/messages', '/notifications', '/media', '/wallet',
+    '/admin-center', '/founder-dashboard', '/forgot-password',
+    '/reset-password', '/verify-email'
+  ];
   if (url.pathname.startsWith('/api/') ||
-      /^(?:\\/(?:login|register|dashboard|profile|referrals|community|messages|notifications|media|wallet|admin-center|founder-dashboard|forgot-password|reset-password|verify-email))(?:\\/|$)/.test(url.pathname)) {
+      privatePaths.some(path => url.pathname === path || url.pathname.startsWith(path + '/'))) {
     return;
   }
 
