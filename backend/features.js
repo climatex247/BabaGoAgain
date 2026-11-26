@@ -90,11 +90,17 @@ function install(app, ctx) {
         if (/^CREATE INDEX IF NOT EXISTS/i.test(sql)) continue;
         await db.run(sql);
       }
+      // Add moderation fields before foreign-key checks for older installations.
+      try { await db.run("ALTER TABLE bga_media_posts ADD COLUMN moderation_status VARCHAR(20) NOT NULL DEFAULT 'pending'"); } catch (e) { if (!/duplicate|exists|1060|SQLITE_ERROR/i.test(String(e.message))) throw e; }
+      try { await db.run("ALTER TABLE bga_media_posts ADD COLUMN reviewed_by VARCHAR(191)"); } catch (e) { if (!/duplicate|exists|1060|SQLITE_ERROR/i.test(String(e.message))) throw e; }
+      try { await db.run("ALTER TABLE bga_media_posts ADD COLUMN reviewed_at VARCHAR(40)"); } catch (e) { if (!/duplicate|exists|1060|SQLITE_ERROR/i.test(String(e.message))) throw e; }
       // Refuse unsafe narrowing: never truncate existing feature or audit data.
       const boundedColumns = [
         ['bga_messages','created_at',40],
         ['bga_media_posts','media_type',20],
         ['bga_media_posts','created_at',40],
+        ['bga_media_posts','reviewed_by',191],
+        ['bga_media_posts','reviewed_at',40],
         ['bga_community_reports','status',20],
         ['bga_community_reports','target_type',20],
         ['bga_community_reports','target_id',191],
@@ -111,6 +117,8 @@ function install(app, ctx) {
       await db.run("ALTER TABLE bga_messages MODIFY COLUMN created_at VARCHAR(40) NOT NULL");
       await db.run("ALTER TABLE bga_media_posts MODIFY COLUMN media_type VARCHAR(20) NOT NULL");
       await db.run("ALTER TABLE bga_media_posts MODIFY COLUMN created_at VARCHAR(40) NOT NULL");
+      await db.run("ALTER TABLE bga_media_posts MODIFY COLUMN reviewed_by VARCHAR(191)");
+      await db.run("ALTER TABLE bga_media_posts MODIFY COLUMN reviewed_at VARCHAR(40)");
       await db.run("ALTER TABLE bga_community_reports MODIFY COLUMN status VARCHAR(20) NOT NULL DEFAULT 'pending'");
       await db.run("ALTER TABLE bga_community_reports MODIFY COLUMN target_type VARCHAR(20) NOT NULL");
       await db.run("ALTER TABLE bga_community_reports MODIFY COLUMN target_id VARCHAR(191) NOT NULL");
@@ -161,10 +169,6 @@ function install(app, ctx) {
       }
       // Widen legacy audit details safely; this preserves existing audit records.
       await db.run("ALTER TABLE bga_admin_audit MODIFY COLUMN details VARCHAR(2000) NOT NULL DEFAULT ''");
-      // Add moderation fields after creating the table (safe for old and new databases).
-      try { await db.run("ALTER TABLE bga_media_posts ADD COLUMN moderation_status VARCHAR(20) NOT NULL DEFAULT 'pending'"); } catch (e) { if (!/duplicate|exists|1060|SQLITE_ERROR/i.test(String(e.message))) throw e; }
-      try { await db.run("ALTER TABLE bga_media_posts ADD COLUMN reviewed_by TEXT"); } catch (e) { if (!/duplicate|exists|1060|SQLITE_ERROR/i.test(String(e.message))) throw e; }
-      try { await db.run("ALTER TABLE bga_media_posts ADD COLUMN reviewed_at TEXT"); } catch (e) { if (!/duplicate|exists|1060|SQLITE_ERROR/i.test(String(e.message))) throw e; }
 
     })().catch(e => { schemaPromise = null; throw e; });
     await schemaPromise;
