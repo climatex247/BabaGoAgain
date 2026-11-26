@@ -1214,11 +1214,13 @@ app.post('/api/admin/wallet/credit', async (req,res) => {
   try {
     const admin = await requireWalletAdmin(req,res); if (!admin) return;
     const userId = safeText(req.body.userId,80), amountNaira = Number(req.body.amountNaira), description = safeText(req.body.description || 'Volunteer programme credit',200);
-    if (!userId || !Number.isSafeInteger(amountNaira) || amountNaira < 1 || amountNaira > 5000000) return res.status(400).json({success:false,message:'Select a member and enter a credit between ₦1 and ₦5,000,000.'});
+    const amountKobo = amountNaira * 100;
+    // No campaign/programme cap: only enforce exact integer precision for the kobo ledger.
+    if (!userId || !Number.isSafeInteger(amountNaira) || amountNaira < 1 || !Number.isSafeInteger(amountKobo)) return res.status(400).json({success:false,message:'Select a member and enter a valid whole-naira credit amount.'});
     const user = await db.get("SELECT id,roles_json FROM users WHERE id=? AND status='active' AND email_verified=1",[userId]);
     if (!user) return res.status(404).json({success:false,message:'Verified active member not found.'});
     const id = crypto.randomUUID(), now = new Date().toISOString(), reference = 'BGA-CREDIT-' + id.replace(/-/g,'').toUpperCase();
-    await db.run('INSERT INTO wallet_transactions (id,user_id,type,amount_kobo,reference,description,created_by,created_at) VALUES (?,?,?,?,?,?,?,?)',[id,userId,'volunteer_credit',amountNaira*100,reference,description,admin.id,now]);
+    await db.run('INSERT INTO wallet_transactions (id,user_id,type,amount_kobo,reference,description,created_by,created_at) VALUES (?,?,?,?,?,?,?,?)',[id,userId,'volunteer_credit',amountKobo,reference,description,admin.id,now]);
       await sendBgaWalletNotification(userId,'wallet','Wallet credited',`Your volunteer wallet was credited with ₦${amountNaira.toLocaleString()}.`);
     res.status(201).json({success:true,message:'Volunteer wallet credited.',data:{reference,amountNaira,balanceKobo:await walletBalanceKobo(userId)}});
   } catch(e) { console.error('Wallet credit failed:',e.message); res.status(500).json({success:false,message:'Could not credit volunteer wallet.'}); }
