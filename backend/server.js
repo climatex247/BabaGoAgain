@@ -1154,7 +1154,8 @@ app.post('/api/wallet/payouts', async (req,res) => {
     if (!roles.includes('Volunteer') && appRow?.state !== 'approved') return res.status(403).json({success:false,message:'Only registered or approved volunteers can request payouts.'});
     if (!process.env.WALLET_ENCRYPTION_KEY || process.env.WALLET_ENCRYPTION_KEY.trim().length < 32) return res.status(503).json({success:false,message:'Wallet payout security is not configured yet. Contact the administrator.'});
     const amountNaira = Number(req.body.amountNaira);
-    if (!Number.isSafeInteger(amountNaira) || amountNaira < 100 || amountNaira > 5000000) return res.status(400).json({success:false,message:'Enter a whole-naira amount between ₦100 and ₦5,000,000.'});
+    const requestedAmountKobo = amountNaira * 100;
+    if (!Number.isSafeInteger(amountNaira) || amountNaira < 100 || !Number.isSafeInteger(requestedAmountKobo)) return res.status(400).json({success:false,message:'Enter a valid whole-naira payout amount of at least ₦100.'});
     const recipientType = req.body.recipientType === 'opay_wallet' ? 'opay_wallet' : req.body.recipientType === 'bank' ? 'bank' : '';
     const recipientName = safeText(req.body.recipientName,100);
     if (!recipientName || !recipientType) return res.status(400).json({success:false,message:'Enter the recipient name and choose OPay wallet or bank transfer.'});
@@ -1172,7 +1173,7 @@ app.post('/api/wallet/payouts', async (req,res) => {
     const encrypted = encryptRecipient(recipient), payoutId = crypto.randomUUID(), now = new Date().toISOString(), ref = 'BGA-' + payoutId.replace(/-/g,'').slice(0,24).toUpperCase();
     await db.transaction(async tx => {
       const row = await tx.get('SELECT COALESCE(SUM(amount_kobo),0) AS balance FROM wallet_transactions WHERE user_id=?', [user.id]);
-      const balance = Number(row?.balance || 0), amountKobo = amountNaira * 100;
+      const balance = Number(row?.balance || 0), amountKobo = requestedAmountKobo;
       if (balance < amountKobo) throw Object.assign(new Error('Your available volunteer balance is insufficient for this payout.'),{statusCode:400});
       await tx.run('INSERT INTO wallet_payouts (id,user_id,amount_kobo,recipient_type,recipient_name,recipient_data_encrypted,status,opay_reference,requested_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)', [payoutId,user.id,amountKobo,recipientType,recipientName,encrypted,'pending',ref,now,now]);
       await tx.run('INSERT INTO wallet_transactions (id,user_id,type,amount_kobo,reference,description,related_payout_id,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?)', [crypto.randomUUID(),user.id,'payout_hold',-amountKobo,'PAYOUT-HOLD-'+payoutId,'Reserved for volunteer payout',payoutId,user.id,now]);
