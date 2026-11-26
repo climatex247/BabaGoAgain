@@ -731,6 +731,9 @@ app.get('/api/public-profiles', async (req,res) => {
       });
       res.status(201).json({success:true,message:'Upload complete. Your media is awaiting moderator approval.'});
     } catch(e) {
+      if (e.statusCode === 409) {
+        return res.status(409).json({success:false,message:e.message});
+      }
       console.error('Publitio upload confirmation failed:',e.message);
       res.status(502).json({success:false,message:'The upload reached Publitio but could not be verified. Please contact support before retrying.'});
     }
