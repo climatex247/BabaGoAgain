@@ -1349,12 +1349,18 @@ app.post('/api/admin/wallet/payouts/:id/check-status', async (req,res) => {
     if (String(response.code) !== '00000') return res.status(502).json({success:false,message:'OPay status query did not succeed. The payout remains processing.'});
     const status = String(response.data?.status || response.data?.orderStatus || '').toUpperCase();
     if (['SUCCESS','SUCCESSFUL','COMPLETED'].includes(status)) {
-      await db.run("UPDATE wallet_payouts SET status='completed',failure_reason=NULL,updated_at=?,processed_by=? WHERE id=? AND status='processing'",[new Date().toISOString(),admin.id,payout.id]);
+      const changed = await db.run("UPDATE wallet_payouts SET status='completed',failure_reason=NULL,updated_at=?,processed_by=? WHERE id=? AND status='processing'",[new Date().toISOString(),admin.id,payout.id]);
+      if (!changed.changes) return res.status(409).json({success:false,message:'The payout status changed during reconciliation. Refresh the queue before taking further action.'});
       await sendBgaWalletNotification(payout.user_id,'wallet','Payout completed','OPay confirmed that your payout was successful.');
       return res.json({success:true,message:'OPay confirmed the payout as successful.',data:{status:'completed'}});
     }
     if (['FAIL','FAILED','CANCEL','CANCELLED','REJECTED'].includes(status)) {
-      await refundPayoutIfNeeded(payout.id,admin.id,String(response.data?.errorMsg || response.data?.message || 'OPay reported a failed transfer'));
+      const refunded = await refundPayoutIfNeeded(payout.id,admin.id,String(response.data?.errorMsg || response.data?.message || 'OPay reported a failed transfer'));
+      if (!refunded) {
+        const current = await db.get('SELECT status FROM wallet_payouts WHERE id=?',[payout.id]);
+        if (current?.status !== 'failed') return res.status(409).json({success:false,message:'The payout status changed during reconciliation. Refresh the queue before taking further action.'});
+        return res.json({success:true,message:'This failed payout was already refunded; no duplicate refund was added.',data:{status:'failed',duplicate:true}});
+      }
       await sendBgaWalletNotification(payout.user_id,'wallet','Payout failed','The payout failed. The held balance has been returned to your wallet.');
       return res.json({success:true,message:'OPay reported a failed payout; the held balance was returned.',data:{status:'failed'}});
     }
