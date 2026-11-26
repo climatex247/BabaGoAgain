@@ -1230,15 +1230,44 @@ app.post('/api/admin/wallet/credit', async (req,res) => {
     const admin = await requireWalletAdmin(req,res); if (!admin) return;
     const userId = safeText(req.body.userId,80), amountNaira = Number(req.body.amountNaira), description = safeText(req.body.description || 'Volunteer programme credit',200);
     const amountKobo = amountNaira * 100;
+    const idempotencyKey = String(req.body.idempotencyKey || '').trim().toLowerCase();
     // No campaign/programme cap: only enforce exact integer precision for the kobo ledger.
     if (!userId || !Number.isSafeInteger(amountNaira) || amountNaira < 1 || !Number.isSafeInteger(amountKobo)) return res.status(400).json({success:false,message:'Select a member and enter a valid whole-naira credit amount.'});
-    const user = await db.get("SELECT id,roles_json FROM users WHERE id=? AND status='active' AND email_verified=1",[userId]);
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(idempotencyKey)) return res.status(400).json({success:false,message:'A valid credit request key is required. Refresh the page and try again.'});
+    const user = await db.get("SELECT id FROM users WHERE id=? AND status='active' AND email_verified=1",[userId]);
     if (!user) return res.status(404).json({success:false,message:'Verified active member not found.'});
-    const id = crypto.randomUUID(), now = new Date().toISOString(), reference = 'BGA-CREDIT-' + id.replace(/-/g,'').toUpperCase();
-    await db.run('INSERT INTO wallet_transactions (id,user_id,type,amount_kobo,reference,description,created_by,created_at) VALUES (?,?,?,?,?,?,?,?)',[id,userId,'volunteer_credit',amountKobo,reference,description,admin.id,now]);
-      await sendBgaWalletNotification(userId,'wallet','Wallet credited',`Your volunteer wallet was credited with ₦${amountNaira.toLocaleString()}.`);
-    res.status(201).json({success:true,message:'Volunteer wallet credited.',data:{reference,amountNaira,balanceKobo:await walletBalanceKobo(userId)}});
-  } catch(e) { console.error('Wallet credit failed:',e.message); res.status(500).json({success:false,message:'Could not credit volunteer wallet.'}); }
+    const reference = 'BGA-CREDIT-' + idempotencyKey.replace(/-/g,'').toUpperCase();
+    let inserted = false;
+    try {
+      await db.transaction(async tx => {
+        const existing = await tx.get('SELECT id,user_id,type,amount_kobo,description,created_by FROM wallet_transactions WHERE reference=?',[reference]);
+        if (existing) {
+          const matches = existing.user_id === userId && existing.type === 'volunteer_credit' &&
+            String(existing.amount_kobo) === String(amountKobo) &&
+            existing.description === description && existing.created_by === admin.id;
+          if (!matches) throw Object.assign(new Error('This credit request key was already used for different details. Refresh the page before creating a new credit.'),{statusCode:409});
+          return;
+        }
+        await tx.run('INSERT INTO wallet_transactions (id,user_id,type,amount_kobo,reference,description,created_by,created_at) VALUES (?,?,?,?,?,?,?,?)',[crypto.randomUUID(),userId,'volunteer_credit',amountKobo,reference,description,admin.id,new Date().toISOString()]);
+        inserted = true;
+      });
+    } catch (error) {
+      if (error.statusCode) throw error;
+      // A concurrent retry may race on the unique reference. Resolve it as the same credit.
+      const existing = await db.get('SELECT id,user_id,type,amount_kobo,description,created_by FROM wallet_transactions WHERE reference=?',[reference]);
+      if (!existing) throw error;
+      const matches = existing.user_id === userId && existing.type === 'volunteer_credit' &&
+        String(existing.amount_kobo) === String(amountKobo) &&
+        existing.description === description && existing.created_by === admin.id;
+      if (!matches) throw Object.assign(new Error('This credit request key was already used for different details.'),{statusCode:409});
+    }
+    if (inserted) await sendBgaWalletNotification(userId,'wallet','Wallet credited',`Your volunteer wallet was credited with ₦${amountNaira.toLocaleString()}.`);
+    res.status(inserted ? 201 : 200).json({success:true,message:inserted?'Volunteer wallet credited.':'This credit was already processed; no duplicate credit was added.',data:{reference,amountNaira,balanceKobo:await walletBalanceKobo(userId),duplicate:!inserted}});
+  } catch(e) {
+    if (e.statusCode === 409) return res.status(409).json({success:false,message:e.message});
+    console.error('Wallet credit failed:',e.message);
+    res.status(500).json({success:false,message:'Could not credit volunteer wallet.'});
+  }
 });
 
 app.get('/api/admin/wallet/payouts', async (req,res) => {
