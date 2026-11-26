@@ -37,6 +37,32 @@ function install(app, ctx) {
     const signature = crypto.createHash('sha1').update(timestamp + nonce + apiSecret).digest('hex');
     return { api_key: apiKey, api_timestamp: timestamp, api_nonce: nonce, api_signature: signature };
   }
+  const publitioPublicReady = new Set();
+  async function ensurePublitioPublic(mediaUrl) {
+    let parsed;
+    try { parsed = new URL(String(mediaUrl || '')); }
+    catch { throw new Error('Stored Publitio video URL is invalid.'); }
+    if (parsed.protocol !== 'https:' || !(parsed.hostname === 'publit.io' || parsed.hostname.endsWith('.publit.io'))) {
+      throw new Error('Stored video is not hosted by Publitio.');
+    }
+    const match = parsed.pathname.match(/\/([^/]+)\.(?:mp4|webm|ogv)$/i);
+    if (!match) throw new Error('Could not identify the Publitio file ID from its URL.');
+    const fileId = match[1];
+    if (publitioPublicReady.has(fileId)) return;
+    const auth = publitioSignature();
+    // Publitio documents file-update options as URL query parameters.
+    const params = new URLSearchParams({...auth, privacy:'1'});
+    const response = await fetch('https://api.publit.io/v1/files/update/' + encodeURIComponent(fileId) + '?' + params.toString(), {
+      method:'PUT',
+      headers:{Accept:'application/json'}
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.success !== true) {
+      const apiMessage = payload?.error?.message || payload?.message || '';
+      throw new Error('Publitio could not publish this approved video (HTTP ' + response.status + ')' + (apiMessage ? ': ' + String(apiMessage).slice(0,180) : '.'));
+    }
+    publitioPublicReady.add(fileId);
+  }
   let schemaPromise;
 
   async function ensureSchema() {
@@ -509,7 +535,7 @@ app.get('/api/public-profiles', async (req,res) => {
   app.get('/api/public-profiles/mine', async (req,res) => {try{const me=await user(req,res);if(!me)return;const profile=await db.get('SELECT id,category,display_name AS displayName,biography,evidence_url AS officialLink,verified FROM bga_public_profiles WHERE user_id=?',[me.id]);const application=await db.get('SELECT status,review_note AS reviewNote,created_at AS createdAt FROM bga_profile_applications WHERE user_id=?',[me.id]);res.json({success:true,data:{profile,application}});}catch(e){res.status(500).json({success:false,message:'Could not load your profile status.'});}});
   app.post('/api/public-profiles/:id/follow', async (req,res) => {try{const me=await user(req,res);if(!me)return;const profile=await db.get('SELECT id,user_id FROM bga_public_profiles WHERE id=?',[req.params.id]);if(!profile)return res.status(404).json({success:false,message:'Profile not found.'});if(profile.user_id===me.id)return res.status(400).json({success:false,message:'You cannot follow your own profile.'});const existing=await db.get('SELECT 1 AS ok FROM bga_follows WHERE follower_id=? AND profile_id=?',[me.id,profile.id]);if(existing){await db.run('DELETE FROM bga_follows WHERE follower_id=? AND profile_id=?',[me.id,profile.id]);return res.json({success:true,following:false});}await db.run('INSERT INTO bga_follows (follower_id,profile_id,created_at) VALUES (?,?,?)',[me.id,profile.id,date()]);res.json({success:true,following:true});}catch(e){console.error('follow',e);res.status(500).json({success:false,message:'Could not update follow status.'});}});
 
-  app.get('/api/media', async (req,res) => {try{await ensureSchema();const type=safe(req.query.type,10);if(type&&!['audio','video'].includes(type))return res.status(400).json({success:false,message:'Media type must be audio or video.'});const rows=await db.all(`SELECT m.id,m.media_type AS mediaType,m.title,m.description,m.media_url AS mediaUrl,m.mime_type AS mimeType,m.bytes,m.created_at AS createdAt,u.full_name AS authorName FROM bga_media_posts m JOIN users u ON u.id=m.user_id WHERE m.moderation_status='approved' ${type?'AND m.media_type=?':''} ORDER BY m.created_at DESC LIMIT 100`,type?[type]:[]);res.json({success:true,data:rows});}catch(e){console.error('media list',e);res.status(500).json({success:false,message:'Could not load media.'});}});
+  app.get('/api/media', async (req,res) => {try{await ensureSchema();const type=safe(req.query.type,10);if(type&&!['audio','video'].includes(type))return res.status(400).json({success:false,message:'Media type must be audio or video.'});const rows=await db.all(`SELECT m.id,m.media_type AS mediaType,m.title,m.description,m.media_url AS mediaUrl,m.mime_type AS mimeType,m.bytes,m.created_at AS createdAt,u.full_name AS authorName FROM bga_media_posts m JOIN users u ON u.id=m.user_id WHERE m.moderation_status='approved' ${type?'AND m.media_type=?':''} ORDER BY m.created_at DESC LIMIT 100`,type?[type]:[]);for(const item of rows){if(item.mediaType==='video'){try{await ensurePublitioPublic(item.mediaUrl);}catch(err){console.error('Approved Publitio video publish check failed:',item.id,err.message);}}}res.json({success:true,data:rows});}catch(e){console.error('media list',e);res.status(500).json({success:false,message:'Could not load media.'});}});
 
   // Founder/moderator queue: uploaded media remains private until approved.
   app.get('/api/admin-center/media', async (req,res) => {
@@ -526,8 +552,7 @@ app.get('/api/public-profiles', async (req,res) => {
       if(!item)return res.status(404).json({success:false,message:'Pending media was not found.'});
       if(decision==='approve') {
         const media=await db.get('SELECT media_type AS mediaType,media_url AS mediaUrl FROM bga_media_posts WHERE id=?',[item.id]);
-        // Uploads are created with privacy=1 (public) before moderation.
-        // Approval changes only BabaGoAgain visibility; do not re-update Publitio files here.
+        if(media&&media.mediaType==='video') await ensurePublitioPublic(media.mediaUrl);
       }
       await db.run('UPDATE bga_media_posts SET moderation_status=?,reviewed_by=?,reviewed_at=? WHERE id=? AND moderation_status=\'pending\'',[decision==='approve'?'approved':'rejected',me.id,date(),item.id]);
       await audit(me.id,'media_'+decision,item.id,'Media moderation decision: '+decision);
