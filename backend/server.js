@@ -921,12 +921,6 @@ app.post('/api/community/posts/:id/comments', async (req,res) => {
     await db.run('INSERT INTO post_comments (id,post_id,user_id,body,created_at) VALUES (?,?,?,?,?)',[id,post.id,user.id,body,createdAt]);
     if(post.userId!==user.id){
       try {
-        await db.run(`CREATE TABLE IF NOT EXISTS bga_notifications (
-      id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL,
-      type VARCHAR(50) NOT NULL DEFAULT 'general', title VARCHAR(191) NOT NULL,
-      body TEXT NOT NULL, link VARCHAR(500) NOT NULL DEFAULT '/notifications',
-      is_read TINYINT NOT NULL DEFAULT 0, created_at VARCHAR(40) NOT NULL, read_at VARCHAR(40)
-    )`);
         await db.run('INSERT INTO bga_notifications (id,user_id,type,title,body,link,is_read,created_at) VALUES (?,?,?,?,?,?,0,?)',[crypto.randomUUID(),post.userId,'community','New comment from '+String(user.full_name||'A member').slice(0,100),body.slice(0,300),'/community',createdAt]);
       } catch(notificationError) { console.error('Community comment notification failed:',notificationError); }
     }
