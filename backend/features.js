@@ -38,16 +38,17 @@ function install(app, ctx) {
     return { api_key: apiKey, api_timestamp: timestamp, api_nonce: nonce, api_signature: signature };
   }
   const publitioPublicReady = new Set();
-  async function ensurePublitioPublic(mediaUrl) {
+  async function ensurePublitioPublic(mediaUrl, publitioFileId) {
     let parsed;
     try { parsed = new URL(String(mediaUrl || '')); }
     catch { throw new Error('Stored Publitio video URL is invalid.'); }
     if (parsed.protocol !== 'https:' || !(parsed.hostname === 'publit.io' || parsed.hostname.endsWith('.publit.io'))) {
       throw new Error('Stored video is not hosted by Publitio.');
     }
-    const match = parsed.pathname.match(/\/([^/]+)\.(?:mp4|webm|ogv)$/i);
-    if (!match) throw new Error('Could not identify the Publitio file ID from its URL.');
-    const fileId = match[1];
+    const fileId = String(publitioFileId || '').trim();
+    if (!fileId || !/^[A-Za-z0-9_-]{6,191}$/.test(fileId)) {
+      throw new Error('Publitio file ID is missing. This older upload must be re-submitted before it can be published.');
+    }
     if (publitioPublicReady.has(fileId)) return;
     const auth = publitioSignature();
     // Publitio documents file-update options as URL query parameters.
@@ -77,7 +78,7 @@ function install(app, ctx) {
         `CREATE TABLE IF NOT EXISTS bga_profile_applications (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL, category TEXT NOT NULL, display_name TEXT NOT NULL, biography TEXT NOT NULL, evidence_url VARCHAR(1000) NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')), reviewed_by VARCHAR(191), reviewed_at TEXT, review_note VARCHAR(1000) NOT NULL DEFAULT '', created_at TEXT NOT NULL, UNIQUE(user_id))`,
         `CREATE TABLE IF NOT EXISTS bga_public_profiles (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL UNIQUE, category TEXT NOT NULL, display_name TEXT NOT NULL, biography TEXT NOT NULL, evidence_url VARCHAR(1000) NOT NULL DEFAULT '', verified INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
         `CREATE TABLE IF NOT EXISTS bga_follows (follower_id VARCHAR(191) NOT NULL, profile_id VARCHAR(191) NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(follower_id,profile_id))`,
-        `CREATE TABLE IF NOT EXISTS bga_media_posts (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL, media_type VARCHAR(20) NOT NULL CHECK(media_type IN ('audio','video')), title TEXT NOT NULL, description VARCHAR(1500) NOT NULL DEFAULT '', media_url TEXT NOT NULL, mime_type VARCHAR(100) NOT NULL, bytes BIGINT NOT NULL, moderation_status VARCHAR(20) NOT NULL DEFAULT 'pending', reviewed_by VARCHAR(191), reviewed_at VARCHAR(40), created_at VARCHAR(40) NOT NULL)`,
+        `CREATE TABLE IF NOT EXISTS bga_media_posts (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL, media_type VARCHAR(20) NOT NULL CHECK(media_type IN ('audio','video')), title TEXT NOT NULL, description VARCHAR(1500) NOT NULL DEFAULT '', media_url TEXT NOT NULL, publitio_file_id VARCHAR(191), mime_type VARCHAR(100) NOT NULL, bytes BIGINT NOT NULL, moderation_status VARCHAR(20) NOT NULL DEFAULT 'pending', reviewed_by VARCHAR(191), reviewed_at VARCHAR(40), created_at VARCHAR(40) NOT NULL)`,
         `CREATE TABLE IF NOT EXISTS bga_media_upload_intents (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL, media_type TEXT NOT NULL, title TEXT NOT NULL, description VARCHAR(1500) NOT NULL DEFAULT '', mime_type TEXT NOT NULL, expires_at TEXT NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL)`,
         `CREATE INDEX IF NOT EXISTS idx_bga_media_created ON bga_media_posts(media_type,created_at)`,
         `CREATE TABLE IF NOT EXISTS bga_admin_roles (user_id VARCHAR(191) NOT NULL, role VARCHAR(50) NOT NULL, granted_by VARCHAR(191), granted_at TEXT NOT NULL, PRIMARY KEY(user_id,role))`,
@@ -103,6 +104,7 @@ function install(app, ctx) {
         await db.run(sql);
       }
       // Add moderation fields before foreign-key checks for older installations.
+      try { await db.run("ALTER TABLE bga_media_posts ADD COLUMN publitio_file_id VARCHAR(191)"); } catch (e) { if (!/duplicate|exists|1060|SQLITE_ERROR/i.test(String(e.message))) throw e; }
       try { await db.run("ALTER TABLE bga_media_posts ADD COLUMN moderation_status VARCHAR(20) NOT NULL DEFAULT 'pending'"); } catch (e) { if (!/duplicate|exists|1060|SQLITE_ERROR/i.test(String(e.message))) throw e; }
       try { await db.run("ALTER TABLE bga_media_posts ADD COLUMN reviewed_by VARCHAR(191)"); } catch (e) { if (!/duplicate|exists|1060|SQLITE_ERROR/i.test(String(e.message))) throw e; }
       try { await db.run("ALTER TABLE bga_media_posts ADD COLUMN reviewed_at VARCHAR(40)"); } catch (e) { if (!/duplicate|exists|1060|SQLITE_ERROR/i.test(String(e.message))) throw e; }
@@ -535,7 +537,7 @@ app.get('/api/public-profiles', async (req,res) => {
   app.get('/api/public-profiles/mine', async (req,res) => {try{const me=await user(req,res);if(!me)return;const profile=await db.get('SELECT id,category,display_name AS displayName,biography,evidence_url AS officialLink,verified FROM bga_public_profiles WHERE user_id=?',[me.id]);const application=await db.get('SELECT status,review_note AS reviewNote,created_at AS createdAt FROM bga_profile_applications WHERE user_id=?',[me.id]);res.json({success:true,data:{profile,application}});}catch(e){res.status(500).json({success:false,message:'Could not load your profile status.'});}});
   app.post('/api/public-profiles/:id/follow', async (req,res) => {try{const me=await user(req,res);if(!me)return;const profile=await db.get('SELECT id,user_id FROM bga_public_profiles WHERE id=?',[req.params.id]);if(!profile)return res.status(404).json({success:false,message:'Profile not found.'});if(profile.user_id===me.id)return res.status(400).json({success:false,message:'You cannot follow your own profile.'});const existing=await db.get('SELECT 1 AS ok FROM bga_follows WHERE follower_id=? AND profile_id=?',[me.id,profile.id]);if(existing){await db.run('DELETE FROM bga_follows WHERE follower_id=? AND profile_id=?',[me.id,profile.id]);return res.json({success:true,following:false});}await db.run('INSERT INTO bga_follows (follower_id,profile_id,created_at) VALUES (?,?,?)',[me.id,profile.id,date()]);res.json({success:true,following:true});}catch(e){console.error('follow',e);res.status(500).json({success:false,message:'Could not update follow status.'});}});
 
-  app.get('/api/media', async (req,res) => {try{await ensureSchema();const type=safe(req.query.type,10);if(type&&!['audio','video'].includes(type))return res.status(400).json({success:false,message:'Media type must be audio or video.'});const rows=await db.all(`SELECT m.id,m.media_type AS mediaType,m.title,m.description,m.media_url AS mediaUrl,m.mime_type AS mimeType,m.bytes,m.created_at AS createdAt,u.full_name AS authorName FROM bga_media_posts m JOIN users u ON u.id=m.user_id WHERE m.moderation_status='approved' ${type?'AND m.media_type=?':''} ORDER BY m.created_at DESC LIMIT 100`,type?[type]:[]);for(const item of rows){if(item.mediaType==='video'){try{await ensurePublitioPublic(item.mediaUrl);}catch(err){console.error('Approved Publitio video publish check failed:',item.id,err.message);}}}res.json({success:true,data:rows});}catch(e){console.error('media list',e);res.status(500).json({success:false,message:'Could not load media.'});}});
+  app.get('/api/media', async (req,res) => {try{await ensureSchema();const type=safe(req.query.type,10);if(type&&!['audio','video'].includes(type))return res.status(400).json({success:false,message:'Media type must be audio or video.'});const rows=await db.all(`SELECT m.id,m.media_type AS mediaType,m.title,m.description,m.media_url AS mediaUrl,m.publitio_file_id AS publitioFileId,m.mime_type AS mimeType,m.bytes,m.created_at AS createdAt,u.full_name AS authorName FROM bga_media_posts m JOIN users u ON u.id=m.user_id WHERE m.moderation_status='approved' ${type?'AND m.media_type=?':''} ORDER BY m.created_at DESC LIMIT 100`,type?[type]:[]);for(const item of rows){if(item.mediaType==='video'){try{await ensurePublitioPublic(item.mediaUrl,item.publitioFileId);}catch(err){console.error('Approved Publitio video publish check failed:',item.id,err.message);}}}res.json({success:true,data:rows});}catch(e){console.error('media list',e);res.status(500).json({success:false,message:'Could not load media.'});}});
 
   // Founder/moderator queue: uploaded media remains private until approved.
   app.get('/api/admin-center/media', async (req,res) => {
@@ -551,8 +553,8 @@ app.get('/api/public-profiles', async (req,res) => {
       const item=await db.get("SELECT id FROM bga_media_posts WHERE id=? AND moderation_status='pending'",[req.params.id]);
       if(!item)return res.status(404).json({success:false,message:'Pending media was not found.'});
       if(decision==='approve') {
-        const media=await db.get('SELECT media_type AS mediaType,media_url AS mediaUrl FROM bga_media_posts WHERE id=?',[item.id]);
-        if(media&&media.mediaType==='video') await ensurePublitioPublic(media.mediaUrl);
+        const media=await db.get('SELECT media_type AS mediaType,media_url AS mediaUrl,publitio_file_id AS publitioFileId FROM bga_media_posts WHERE id=?',[item.id]);
+        if(media&&media.mediaType==='video') await ensurePublitioPublic(media.mediaUrl,media.publitioFileId);
       }
       await db.run('UPDATE bga_media_posts SET moderation_status=?,reviewed_by=?,reviewed_at=? WHERE id=? AND moderation_status=\'pending\'',[decision==='approve'?'approved':'rejected',me.id,date(),item.id]);
       await audit(me.id,'media_'+decision,item.id,'Media moderation decision: '+decision);
@@ -736,8 +738,8 @@ app.get('/api/public-profiles', async (req,res) => {
           throw Object.assign(new Error('This upload session has already been completed or expired.'), { statusCode: 409 });
         }
         await tx.run(
-          'INSERT INTO bga_media_posts (id,user_id,media_type,title,description,media_url,mime_type,bytes,moderation_status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-          [token,me.id,intent.media_type,intent.title,intent.description,mediaUrl,intent.mime_type,Number(asset.size),'pending',now]
+          'INSERT INTO bga_media_posts (id,user_id,media_type,title,description,media_url,publitio_file_id,mime_type,bytes,moderation_status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+          [token,me.id,intent.media_type,intent.title,intent.description,mediaUrl,fileId,intent.mime_type,Number(asset.size),'pending',now]
         );
       });
       res.status(201).json({success:true,message:'Upload complete. Your media is awaiting moderator approval.'});
