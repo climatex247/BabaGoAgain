@@ -134,7 +134,6 @@ function install(app, ctx) {
       await db.run("ALTER TABLE bga_messages MODIFY COLUMN created_at VARCHAR(40) NOT NULL");
       await db.run("ALTER TABLE bga_media_posts MODIFY COLUMN media_type VARCHAR(20) NOT NULL");
       await db.run("ALTER TABLE bga_media_posts MODIFY COLUMN created_at VARCHAR(40) NOT NULL");
-      await db.run("ALTER TABLE bga_media_posts MODIFY COLUMN reviewed_by VARCHAR(191)");
       await db.run("ALTER TABLE bga_media_posts MODIFY COLUMN reviewed_at VARCHAR(40)");
       await db.run("ALTER TABLE bga_community_reports MODIFY COLUMN status VARCHAR(20) NOT NULL DEFAULT 'pending'");
       await db.run("ALTER TABLE bga_community_reports MODIFY COLUMN target_type VARCHAR(20) NOT NULL");
@@ -156,6 +155,17 @@ function install(app, ctx) {
         ['bga_community_reports','reporter_id','NOT NULL'],['bga_community_reports','reviewed_by','NULL']
       ];
       for (const [table,column,nullability] of featureFkColumns) {
+        const current = await db.get(
+          'SELECT DATA_TYPE,CHARACTER_MAXIMUM_LENGTH,CHARACTER_SET_NAME,COLLATION_NAME,IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?',
+          [table,column]
+        );
+        if (!current) throw new Error('Required foreign-key column is missing: ' + table + '.' + column);
+        const nullable = nullability === 'NULL';
+        if (String(current.DATA_TYPE).toLowerCase() === 'varchar' &&
+            Number(current.CHARACTER_MAXIMUM_LENGTH) === 191 &&
+            current.CHARACTER_SET_NAME === 'utf8mb4' &&
+            current.COLLATION_NAME === 'utf8mb4_unicode_ci' &&
+            (current.IS_NULLABLE === 'YES') === nullable) continue;
         await db.run('ALTER TABLE \`' + table + '\` MODIFY COLUMN \`' + column + '\` VARCHAR(191) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci ' + nullability);
       }
       // MySQL ignores column-level REFERENCES clauses. Add real InnoDB foreign keys
