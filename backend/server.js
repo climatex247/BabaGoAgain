@@ -1214,12 +1214,6 @@ app.get('/api/admin/wallet/members', async (req,res) => {
 
 async function sendBgaWalletNotification(userId, type, title, body) {
   try {
-    await db.run(`CREATE TABLE IF NOT EXISTS bga_notifications (
-      id TEXT PRIMARY KEY, user_id TEXT NOT NULL, type TEXT NOT NULL DEFAULT 'general',
-      title TEXT NOT NULL, body TEXT NOT NULL,
-      link TEXT NOT NULL DEFAULT '/notifications',
-      is_read INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, read_at TEXT
-    )`);
     await db.run(
       'INSERT INTO bga_notifications (id,user_id,type,title,body,link,created_at) VALUES (?,?,?,?,?,?,?)',
       [crypto.randomUUID(), userId, type, title, body, '/wallet', new Date().toISOString()]
