@@ -1265,7 +1265,13 @@ app.post('/api/admin/wallet/payouts/:id/reject', async (req,res) => {
     });
     await sendBgaWalletNotification(payout.user_id,'wallet','Payout rejected','Your payout request was rejected. The reserved balance has been returned to your wallet.');
       res.json({success:true,message:'Payout rejected and reserved balance returned to volunteer.'});
-  } catch(e) { console.error('Payout rejection failed:',e.message); res.status(500).json({success:false,message:'Could not reject payout.'}); }
+  } catch(e) {
+    if (e.statusCode === 409) {
+      return res.status(409).json({success:false,message:e.message});
+    }
+    console.error('Payout rejection failed:',e.message);
+    return res.status(500).json({success:false,message:'Could not reject payout.'});
+  }
 });
 
 app.post('/api/admin/wallet/payouts/:id/approve', async (req,res) => {
