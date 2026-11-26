@@ -154,7 +154,19 @@ function install(app, ctx) {
       await db.run("ALTER TABLE bga_media_upload_intents MODIFY COLUMN description VARCHAR(1500) NOT NULL DEFAULT ''");
       await db.run("ALTER TABLE bga_community_reports MODIFY COLUMN details VARCHAR(1000) NOT NULL DEFAULT ''");
       await db.run("ALTER TABLE bga_community_reports MODIFY COLUMN review_note VARCHAR(1000) NOT NULL DEFAULT ''");
-      // Match the users table's utf8mb4_unicode_ci collation before adding string foreign keys.
+      // Match the actual users.id character set and collation before adding string foreign keys.
+      // Existing installations may use a different MySQL default collation.
+      const userIdColumn = await db.get(
+        "SELECT DATA_TYPE,CHARACTER_MAXIMUM_LENGTH,CHARACTER_SET_NAME,COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='users' AND COLUMN_NAME='id'"
+      );
+      if (!userIdColumn || String(userIdColumn.DATA_TYPE).toLowerCase() !== 'varchar' ||
+          Number(userIdColumn.CHARACTER_MAXIMUM_LENGTH) !== 191 ||
+          !/^[A-Za-z0-9_]+$/.test(String(userIdColumn.CHARACTER_SET_NAME || '')) ||
+          !/^[A-Za-z0-9_]+$/.test(String(userIdColumn.COLLATION_NAME || ''))) {
+        throw new Error('users.id must be VARCHAR(191) with a valid MySQL character set and collation before feature foreign keys can be installed.');
+      }
+      const idCharset = userIdColumn.CHARACTER_SET_NAME;
+      const idCollation = userIdColumn.COLLATION_NAME;
       // All IDs are bounded and validated above; nullable reviewer/grantor columns stay nullable.
       const featureFkColumns = [
         ['bga_conversations','id','NOT NULL'],
@@ -180,10 +192,10 @@ function install(app, ctx) {
         const nullable = nullability === 'NULL';
         if (String(current.DATA_TYPE).toLowerCase() === 'varchar' &&
             Number(current.CHARACTER_MAXIMUM_LENGTH) === 191 &&
-            current.CHARACTER_SET_NAME === 'utf8mb4' &&
-            current.COLLATION_NAME === 'utf8mb4_unicode_ci' &&
+            current.CHARACTER_SET_NAME === idCharset &&
+            current.COLLATION_NAME === idCollation &&
             (current.IS_NULLABLE === 'YES') === nullable) continue;
-        await db.run('ALTER TABLE \`' + table + '\` MODIFY COLUMN \`' + column + '\` VARCHAR(191) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci ' + nullability);
+        await db.run('ALTER TABLE \`' + table + '\` MODIFY COLUMN \`' + column + '\` VARCHAR(191) CHARACTER SET ' + idCharset + ' COLLATE ' + idCollation + ' ' + nullability);
       }
       // MySQL ignores column-level REFERENCES clauses. Add real InnoDB foreign keys
       // explicitly, after validating legacy rows so startup never silently deletes data.
