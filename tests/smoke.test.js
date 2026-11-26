@@ -86,7 +86,8 @@ assert.match(featuresSource, /id VARCHAR\(191\) PRIMARY KEY/,'Feature table iden
 assert.match(featuresSource, /const featureForeignKeys = \[/,'Feature relationships must have explicit MySQL foreign-key migrations');
 assert.match(featuresSource, /information_schema\.TABLE_CONSTRAINTS/,'Foreign-key migrations must be idempotent');
 assert.match(featuresSource, /orphan_count/,'Foreign-key migrations must detect orphan rows before enforcement');
-assert.match(featuresSource, /CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci/,'Foreign-key columns must match the users table collation');
+assert.match(featuresSource, /const idCharset = userIdColumn\.CHARACTER_SET_NAME/,'Foreign-key columns must use the actual users ID character set');
+assert.match(featuresSource, /COLLATE ' \+ idCollation/,'Foreign-key columns must use the actual users ID collation');
 assert.match(featuresSource, /fk_bga_notifications_user/,'Notification ownership must be protected by a user foreign key');
 assert.match(featuresSource, /CREATE TABLE IF NOT EXISTS bga_notifications/,'Notifications table must be initialized before wallet notification writes');
 assert.equal((featuresSource.match(/CREATE TABLE IF NOT EXISTS bga_notifications/g)||[]).length,1,'Notifications must have one shared startup schema, not request-time DDL');
