@@ -20,6 +20,18 @@ for (const file of [
 ]) assert.ok(fs.existsSync(path.join(root, file)), `${file} missing`);
 
 assert.ok(fs.existsSync(path.join(root, 'frontend/assets/baba-go-again-tinubu-2027.png')), 'welcome poster missing');
+const pwaManifest = JSON.parse(fs.readFileSync(path.join(root,'frontend/manifest.webmanifest'),'utf8'));
+assert.equal(pwaManifest.name,'Baba Go Again','PWA manifest must identify the application');
+assert.equal(pwaManifest.start_url,'/','PWA must start at the public home page');
+assert.ok(fs.existsSync(path.join(root,'frontend/service-worker.js')),'PWA service worker missing');
+assert.ok(fs.existsSync(path.join(root,'frontend/pwa-register.js')),'PWA registration script missing');
+assert.ok(fs.existsSync(path.join(root,'frontend/offline.html')),'PWA offline page missing');
+const serviceWorker = fs.readFileSync(path.join(root,'frontend/service-worker.js'),'utf8');
+assert.match(serviceWorker, /url\.pathname\.startsWith\('\/api\/'\)/,'PWA must never cache API responses');
+assert.match(serviceWorker, /wallet|admin-center|founder-dashboard/,'PWA must explicitly exclude private wallet and administrator routes');
+assert.match(fs.readFileSync(path.join(root,'frontend/index.html'),'utf8'), /rel="manifest" href="\/manifest\.webmanifest"/,'Homepage must link the PWA manifest');
+assert.match(fs.readFileSync(path.join(root,'frontend/index.html'),'utf8'), /pwa-register\.js/,'Homepage must register the service worker');
+
 const registerHtml = fs.readFileSync(path.join(root, 'frontend/register.html'), 'utf8');
 const registerJs = fs.readFileSync(path.join(root, 'frontend/register.js'), 'utf8');
 assert.ok(registerHtml.includes('register.js?v=20261119-referralroot1'), 'registration script cache-buster missing');
