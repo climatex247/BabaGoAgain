@@ -76,6 +76,12 @@ assert.match(featuresSource, /ALTER TABLE bga_messages MODIFY COLUMN created_at 
 assert.match(featuresSource, /ALTER TABLE bga_media_posts MODIFY COLUMN media_type VARCHAR\(20\)/,'MySQL media category index column must be bounded');
 assert.match(featuresSource, /ALTER TABLE bga_community_reports MODIFY COLUMN target_id VARCHAR\(191\)/,'MySQL report unique-key column must be bounded');
 assert.match(featuresSource, /Refusing to narrow/,'Schema migration must refuse to truncate existing values');
+assert.doesNotMatch(featuresSource, /\\bid TEXT PRIMARY KEY/i,'MySQL feature tables must not use TEXT primary keys');
+assert.match(featuresSource, /id VARCHAR\\(191\\) PRIMARY KEY/,'Feature table identifiers must use bounded MySQL primary-key columns');
+assert.match(featuresSource, /is_read TINYINT NOT NULL DEFAULT 0/,'Notification read state must use a MySQL integer type');
+assert.match(walletServer, /is_read TINYINT NOT NULL DEFAULT 0/,'Wallet notification schema must be MySQL compatible');
+assert.match(walletServer, /The payout status changed during reconciliation/,'OPay status reconciliation must detect concurrent state changes');
+assert.match(walletServer, /This failed payout was already refunded/,'Repeated failed-status checks must not add another refund');
 assert.match(featuresSource, /CREATE INDEX'\)/,'Feature indexes must be created with MySQL-compatible syntax');
 const adminWalletJs = fs.readFileSync(path.join(root,'frontend/admin-wallet.js'),'utf8');
 assert.match(adminWalletJs, /crypto\.randomUUID\(\)/,'Admin credit form must generate an idempotency key');
