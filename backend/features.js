@@ -391,45 +391,12 @@ function install(app, ctx) {
     catch(e){console.error('message read',e);res.status(500).json({success:false,message:'Could not load messages.'});}
   });
   app.post('/api/messages/conversations/:id', async (req,res) => {
-    try { const me=await user(req,res);if(!me)return;const body=safe(req.body.body,4000);if(!body)return res.status(400).json({success:false,message:'Message cannot be empty.'});const membership=await db.get('SELECT 1 AS ok FROM bga_conversation_members WHERE conversation_id=? AND user_id=?',[req.params.id,me.id]);if(!membership)return res.status(404).json({success:false,message:'Conversation not found.'});const msg=id(),now=date();await db.transaction(async tx =>{await tx.run('INSERT INTO bga_messages (id,conversation_id,sender_id,body,created_at) VALUES (?,?,?,?,?)',[msg,req.params.id,me.id,body,now]);await tx.run('UPDATE bga_conversations SET updated_at=? WHERE id=?',[now,req.params.id]);});try{await db.run("CREATE TABLE IF NOT EXISTS bga_notifications (
-      id VARCHAR(191) PRIMARY KEY,
-      user_id VARCHAR(191) NOT NULL,
-      type VARCHAR(50) NOT NULL DEFAULT 'general',
-      title VARCHAR(191) NOT NULL,
-      body TEXT NOT NULL,
-      link VARCHAR(500) NOT NULL DEFAULT '/notifications',
-      is_read TINYINT NOT NULL DEFAULT 0,
-      created_at VARCHAR(40) NOT NULL,
-      read_at VARCHAR(40)
-    ) PRIMARY KEY,user_id TEXT NOT NULL,type TEXT NOT NULL DEFAULT 'general',title TEXT NOT NULL,body TEXT NOT NULL,link TEXT NOT NULL DEFAULT '/notifications',is_read INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,read_at TEXT)");const recipients=await db.all('SELECT user_id AS userId FROM bga_conversation_members WHERE conversation_id=? AND user_id<>?',[req.params.id,me.id]);for(const recipient of recipients){await db.run('INSERT INTO bga_notifications (id,user_id,type,title,body,link,is_read,created_at) VALUES (?,?,?,?,?,?,0,?)',[id(),recipient.userId,'message','New message from '+safe(me.full_name,100),body.slice(0,300),'/messages',now]);}}catch(notificationError){console.error('message notification',notificationError);}res.status(201).json({success:true,data:{id:msg,body,createdAt:now,senderId:me.id,senderName:me.full_name}}); }
+    try { const me=await user(req,res);if(!me)return;const body=safe(req.body.body,4000);if(!body)return res.status(400).json({success:false,message:'Message cannot be empty.'});const membership=await db.get('SELECT 1 AS ok FROM bga_conversation_members WHERE conversation_id=? AND user_id=?',[req.params.id,me.id]);if(!membership)return res.status(404).json({success:false,message:'Conversation not found.'});const msg=id(),now=date();await db.transaction(async tx =>{await tx.run('INSERT INTO bga_messages (id,conversation_id,sender_id,body,created_at) VALUES (?,?,?,?,?)',[msg,req.params.id,me.id,body,now]);await tx.run('UPDATE bga_conversations SET updated_at=? WHERE id=?',[now,req.params.id]);});try{const recipients=await db.all('SELECT user_id AS userId FROM bga_conversation_members WHERE conversation_id=? AND user_id<>?',[req.params.id,me.id]);for(const recipient of recipients){await db.run('INSERT INTO bga_notifications (id,user_id,type,title,body,link,is_read,created_at) VALUES (?,?,?,?,?,?,0,?)',[id(),recipient.userId,'message','New message from '+safe(me.full_name,100),body.slice(0,300),'/messages',now]);}}catch(notificationError){console.error('message notification',notificationError);}res.status(201).json({success:true,data:{id:msg,body,createdAt:now,senderId:me.id,senderName:me.full_name}}); }
     catch(e){console.error('message send',e);res.status(500).json({success:false,message:'Could not send message.'});}
   });
 
 
   // Baba Go Again notification centre
-  const ensureNotificationTable = async () => db.run(`
-    CREATE TABLE IF NOT EXISTS bga_notifications (
-      id VARCHAR(191) PRIMARY KEY,
-      user_id VARCHAR(191) NOT NULL,
-      type VARCHAR(50) NOT NULL DEFAULT 'general',
-      title VARCHAR(191) NOT NULL,
-      body TEXT NOT NULL,
-      link VARCHAR(500) NOT NULL DEFAULT '/notifications',
-      is_read TINYINT NOT NULL DEFAULT 0,
-      created_at VARCHAR(40) NOT NULL,
-      read_at VARCHAR(40)
-    ) PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      type TEXT NOT NULL DEFAULT 'general',
-      title TEXT NOT NULL,
-      body TEXT NOT NULL,
-      link TEXT NOT NULL DEFAULT '/notifications',
-      is_read INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      read_at TEXT
-    )
-  `);
-
   app.get('/notifications', (req,res) =>
     res.sendFile(path.join(frontendPath,'notifications.html'))
   );
@@ -438,7 +405,7 @@ function install(app, ctx) {
     try {
       const me = await user(req,res);
       if (!me) return;
-      await ensureNotificationTable();
+
       const rows = await db.all(
         'SELECT id,type,title,body,link,is_read AS isRead,created_at AS createdAt,read_at AS readAt FROM bga_notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 100',
         [me.id]
@@ -458,7 +425,7 @@ function install(app, ctx) {
     try {
       const me = await user(req,res);
       if (!me) return;
-      await ensureNotificationTable();
+
       await db.run(
         'UPDATE bga_notifications SET is_read=1,read_at=? WHERE user_id=? AND is_read=0',
         [date(),me.id]
@@ -474,7 +441,7 @@ function install(app, ctx) {
     try {
       const me = await user(req,res);
       if (!me) return;
-      await ensureNotificationTable();
+
       const result = await db.run(
         'UPDATE bga_notifications SET is_read=1,read_at=? WHERE id=? AND user_id=?',
         [date(),req.params.id,me.id]
@@ -490,7 +457,7 @@ function install(app, ctx) {
     try {
       const me = await user(req,res);
       if (!me) return;
-      await ensureNotificationTable();
+
       await db.run(
         'DELETE FROM bga_notifications WHERE id=? AND user_id=?',
         [req.params.id,me.id]
@@ -506,7 +473,7 @@ function install(app, ctx) {
     try {
       const me = await user(req,res);
       if (!me) return;
-      await ensureNotificationTable();
+
       await db.run('DELETE FROM bga_notifications WHERE user_id=?',[me.id]);
       res.json({success:true,message:'Notifications cleared.'});
     } catch(e) {
