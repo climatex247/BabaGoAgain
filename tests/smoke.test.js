@@ -54,6 +54,12 @@ for (const route of ["app.get('/api/wallet/me'", "app.post('/api/wallet/payouts'
 assert.match(walletHtml, /payoutForm/);
 assert.match(adminWalletHtml, /payoutQueue/);
 assert.match(walletServer, /if \(e\.statusCode === 409\)\s*\{\s*return res\.status\(409\)\.json\(/, 'Concurrent payout rejection conflicts must return HTTP 409');
+assert.match(walletServer, /idempotencyKey/,'Wallet credits must require an idempotency key');
+assert.match(walletServer, /BGA-CREDIT-/,'Wallet credit references must be deterministic for retries');
+assert.match(walletServer, /This credit was already processed/,'Wallet credit retries must not add a duplicate ledger entry');
+const adminWalletJs = fs.readFileSync(path.join(root,'frontend/admin-wallet.js'),'utf8');
+assert.match(adminWalletJs, /crypto\.randomUUID\(\)/,'Admin credit form must generate an idempotency key');
+assert.match(adminWalletJs, /pendingCreditKey/,'Admin credit form must reuse the same key when retrying an unchanged request');
 assert.match(fs.readFileSync(path.join(root,'backend/opay.js'),'utf8'), /\/api\/v3\/transfer\/toBank/);
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bga-db-smoke-'));
