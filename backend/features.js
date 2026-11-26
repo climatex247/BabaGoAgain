@@ -63,11 +63,11 @@ function install(app, ctx) {
         `CREATE TABLE IF NOT EXISTS bga_messages (id VARCHAR(191) PRIMARY KEY, conversation_id VARCHAR(191) NOT NULL, sender_id VARCHAR(191) NOT NULL, body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 4000), created_at VARCHAR(40) NOT NULL, read_at VARCHAR(40))`,
         `CREATE TABLE IF NOT EXISTS bga_notifications (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL, type VARCHAR(50) NOT NULL DEFAULT 'general', title VARCHAR(191) NOT NULL, body TEXT NOT NULL, link VARCHAR(500) NOT NULL DEFAULT '/notifications', is_read TINYINT NOT NULL DEFAULT 0, created_at VARCHAR(40) NOT NULL, read_at VARCHAR(40))`,
         `CREATE INDEX IF NOT EXISTS idx_bga_messages_conversation ON bga_messages(conversation_id,created_at)`,
-        `CREATE TABLE IF NOT EXISTS bga_profile_applications (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL, category TEXT NOT NULL, display_name TEXT NOT NULL, biography TEXT NOT NULL, evidence_url TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')), reviewed_by VARCHAR(191), reviewed_at TEXT, review_note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, UNIQUE(user_id))`,
-        `CREATE TABLE IF NOT EXISTS bga_public_profiles (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL UNIQUE, category TEXT NOT NULL, display_name TEXT NOT NULL, biography TEXT NOT NULL, evidence_url TEXT NOT NULL DEFAULT '', verified INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
+        `CREATE TABLE IF NOT EXISTS bga_profile_applications (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL, category TEXT NOT NULL, display_name TEXT NOT NULL, biography TEXT NOT NULL, evidence_url VARCHAR(1000) NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')), reviewed_by VARCHAR(191), reviewed_at TEXT, review_note VARCHAR(1000) NOT NULL DEFAULT '', created_at TEXT NOT NULL, UNIQUE(user_id))`,
+        `CREATE TABLE IF NOT EXISTS bga_public_profiles (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL UNIQUE, category TEXT NOT NULL, display_name TEXT NOT NULL, biography TEXT NOT NULL, evidence_url VARCHAR(1000) NOT NULL DEFAULT '', verified INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
         `CREATE TABLE IF NOT EXISTS bga_follows (follower_id VARCHAR(191) NOT NULL, profile_id VARCHAR(191) NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(follower_id,profile_id))`,
-        `CREATE TABLE IF NOT EXISTS bga_media_posts (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL, media_type VARCHAR(20) NOT NULL CHECK(media_type IN ('audio','video')), title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', media_url TEXT NOT NULL, mime_type VARCHAR(100) NOT NULL, bytes BIGINT NOT NULL, moderation_status VARCHAR(20) NOT NULL DEFAULT 'pending', reviewed_by VARCHAR(191), reviewed_at VARCHAR(40), created_at VARCHAR(40) NOT NULL)`,
-        `CREATE TABLE IF NOT EXISTS bga_media_upload_intents (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL, media_type TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', mime_type TEXT NOT NULL, expires_at TEXT NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL)`,
+        `CREATE TABLE IF NOT EXISTS bga_media_posts (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL, media_type VARCHAR(20) NOT NULL CHECK(media_type IN ('audio','video')), title TEXT NOT NULL, description VARCHAR(1500) NOT NULL DEFAULT '', media_url TEXT NOT NULL, mime_type VARCHAR(100) NOT NULL, bytes BIGINT NOT NULL, moderation_status VARCHAR(20) NOT NULL DEFAULT 'pending', reviewed_by VARCHAR(191), reviewed_at VARCHAR(40), created_at VARCHAR(40) NOT NULL)`,
+        `CREATE TABLE IF NOT EXISTS bga_media_upload_intents (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL, media_type TEXT NOT NULL, title TEXT NOT NULL, description VARCHAR(1500) NOT NULL DEFAULT '', mime_type TEXT NOT NULL, expires_at TEXT NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL)`,
         `CREATE INDEX IF NOT EXISTS idx_bga_media_created ON bga_media_posts(media_type,created_at)`,
         `CREATE TABLE IF NOT EXISTS bga_admin_roles (user_id VARCHAR(191) NOT NULL, role VARCHAR(50) NOT NULL, granted_by VARCHAR(191), granted_at TEXT NOT NULL, PRIMARY KEY(user_id,role))`,
         `CREATE TABLE IF NOT EXISTS bga_admin_audit (id VARCHAR(191) PRIMARY KEY, actor_id VARCHAR(191) NOT NULL, action VARCHAR(100) NOT NULL, target_id VARCHAR(191), details VARCHAR(2000) NOT NULL DEFAULT '', created_at VARCHAR(40) NOT NULL)`,
@@ -77,11 +77,11 @@ function install(app, ctx) {
           target_type VARCHAR(20) NOT NULL CHECK(target_type IN ('post','comment','group','event')),
           target_id VARCHAR(191) NOT NULL,
           reason TEXT NOT NULL,
-          details TEXT NOT NULL DEFAULT '',
+          details VARCHAR(1000) NOT NULL DEFAULT '',
           status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','dismissed','resolved','hidden')),
           reviewed_by VARCHAR(191),
           reviewed_at TEXT,
-          review_note TEXT NOT NULL DEFAULT '',
+          review_note VARCHAR(1000) NOT NULL DEFAULT '',
           created_at VARCHAR(40) NOT NULL,
           UNIQUE(reporter_id,target_type,target_id)
         )`,
@@ -107,6 +107,13 @@ function install(app, ctx) {
         ['bga_community_reports','target_id',191],
         ['bga_community_reports','created_at',40],
         ['bga_admin_audit','details',2000],
+        ['bga_profile_applications','evidence_url',1000],
+        ['bga_profile_applications','review_note',1000],
+        ['bga_public_profiles','evidence_url',1000],
+        ['bga_media_posts','description',1500],
+        ['bga_media_upload_intents','description',1500],
+        ['bga_community_reports','details',1000],
+        ['bga_community_reports','review_note',1000],
         ['bga_conversation_members','conversation_id',191],
         ['bga_conversation_members','user_id',191],
         ['bga_messages','conversation_id',191],
@@ -139,6 +146,14 @@ function install(app, ctx) {
       await db.run("ALTER TABLE bga_community_reports MODIFY COLUMN target_type VARCHAR(20) NOT NULL");
       await db.run("ALTER TABLE bga_community_reports MODIFY COLUMN target_id VARCHAR(191) NOT NULL");
       await db.run("ALTER TABLE bga_community_reports MODIFY COLUMN created_at VARCHAR(40) NOT NULL");
+      // Widen fields that previously passed through SQLite TEXT defaults; keep every existing value.
+      await db.run("ALTER TABLE bga_profile_applications MODIFY COLUMN evidence_url VARCHAR(1000) NOT NULL DEFAULT ''");
+      await db.run("ALTER TABLE bga_profile_applications MODIFY COLUMN review_note VARCHAR(1000) NOT NULL DEFAULT ''");
+      await db.run("ALTER TABLE bga_public_profiles MODIFY COLUMN evidence_url VARCHAR(1000) NOT NULL DEFAULT ''");
+      await db.run("ALTER TABLE bga_media_posts MODIFY COLUMN description VARCHAR(1500) NOT NULL DEFAULT ''");
+      await db.run("ALTER TABLE bga_media_upload_intents MODIFY COLUMN description VARCHAR(1500) NOT NULL DEFAULT ''");
+      await db.run("ALTER TABLE bga_community_reports MODIFY COLUMN details VARCHAR(1000) NOT NULL DEFAULT ''");
+      await db.run("ALTER TABLE bga_community_reports MODIFY COLUMN review_note VARCHAR(1000) NOT NULL DEFAULT ''");
       // Match the users table's utf8mb4_unicode_ci collation before adding string foreign keys.
       // All IDs are bounded and validated above; nullable reviewer/grantor columns stay nullable.
       const featureFkColumns = [
