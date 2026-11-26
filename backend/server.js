@@ -1113,8 +1113,13 @@ async function requireWalletAdmin(req, res) {
   }
 }
 async function walletBalanceKobo(userId) {
-  const row = await db.get('SELECT COALESCE(SUM(amount_kobo),0) AS balance FROM wallet_transactions WHERE user_id=?', [userId]);
-  return Number(row?.balance || 0);
+  const row = await db.get("SELECT CAST(COALESCE(SUM(amount_kobo),0) AS CHAR) AS balance FROM wallet_transactions WHERE user_id=?", [userId]);
+  return BigInt(row?.balance || '0').toString();
+}
+function walletBalanceResponse(exactBalance) {
+  const exact = BigInt(exactBalance);
+  const safe = exact <= BigInt(Number.MAX_SAFE_INTEGER) && exact >= BigInt(Number.MIN_SAFE_INTEGER);
+  return { balanceKobo: safe ? Number(exact) : null, balanceKoboExact: exact.toString() };
 }
 async function refundPayoutIfNeeded(payoutId, adminId, reason) {
   return db.transaction(async tx => {
@@ -1139,10 +1144,10 @@ app.get('/api/wallet/me', async (req,res) => {
     let roles = []; try { roles = JSON.parse(user.roles_json || '[]'); } catch {}
     const appRow = await db.get("SELECT state FROM volunteer_applications WHERE user_id=?", [user.id]);
     if (!roles.includes('Volunteer') && appRow?.state !== 'approved') return res.status(403).json({success:false,message:'The earnings wallet is available to approved volunteers. Select Volunteer during registration or contact the coordination team.'});
-    const balanceKobo = await walletBalanceKobo(user.id);
-    const transactions = await db.all('SELECT id,type,amount_kobo AS amountKobo,reference,description,created_at AS createdAt FROM wallet_transactions WHERE user_id=? ORDER BY created_at DESC LIMIT 50',[user.id]);
-    const payouts = await db.all("SELECT id,amount_kobo AS amountKobo,recipient_type AS recipientType,status,opay_reference AS reference,opay_order_no AS providerOrderNo,failure_reason AS failureReason,requested_at AS requestedAt,updated_at AS updatedAt FROM wallet_payouts WHERE user_id=? ORDER BY requested_at DESC LIMIT 25",[user.id]);
-    res.json({success:true,data:{balanceKobo,transactions,payouts,opayConfigured:opay.config().enabled}});
+    const balanceKoboExact = await walletBalanceKobo(user.id);
+    const transactions = await db.all("SELECT id,type,CAST(amount_kobo AS CHAR) AS amountKobo,reference,description,created_at AS createdAt FROM wallet_transactions WHERE user_id=? ORDER BY created_at DESC LIMIT 50",[user.id]);
+    const payouts = await db.all("SELECT id,CAST(amount_kobo AS CHAR) AS amountKobo,recipient_type AS recipientType,status,opay_reference AS reference,opay_order_no AS providerOrderNo,failure_reason AS failureReason,requested_at AS requestedAt,updated_at AS updatedAt FROM wallet_payouts WHERE user_id=? ORDER BY requested_at DESC LIMIT 25",[user.id]);
+    res.json({success:true,data:{...walletBalanceResponse(balanceKoboExact),transactions,payouts,opayConfigured:opay.config().enabled}});
   } catch(e) { console.error('Wallet summary failed:',e.message); res.status(500).json({success:false,message:'Could not load volunteer wallet.'}); }
 });
 
@@ -1184,11 +1189,11 @@ app.post('/api/wallet/payouts', async (req,res) => {
       }
 
       const row = await tx.get(
-        'SELECT COALESCE(SUM(amount_kobo),0) AS balance FROM wallet_transactions WHERE user_id=?',
+        "SELECT CAST(COALESCE(SUM(amount_kobo),0) AS CHAR) AS balance FROM wallet_transactions WHERE user_id=?",
         [user.id]
       );
-      const balance = Number(row?.balance || 0), amountKobo = requestedAmountKobo;
-      if (balance < amountKobo) throw Object.assign(new Error('Your available volunteer balance is insufficient for this payout.'),{statusCode:400});
+      const balance = BigInt(row?.balance || '0'), amountKobo = requestedAmountKobo;
+      if (balance < BigInt(amountKobo)) throw Object.assign(new Error('Your available volunteer balance is insufficient for this payout.'),{statusCode:400});
       await tx.run('INSERT INTO wallet_payouts (id,user_id,amount_kobo,recipient_type,recipient_name,recipient_data_encrypted,status,opay_reference,requested_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)', [payoutId,user.id,amountKobo,recipientType,recipientName,encrypted,'pending',ref,now,now]);
       await tx.run('INSERT INTO wallet_transactions (id,user_id,type,amount_kobo,reference,description,related_payout_id,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?)', [crypto.randomUUID(),user.id,'payout_hold',-amountKobo,'PAYOUT-HOLD-'+payoutId,'Reserved for volunteer payout',payoutId,user.id,now]);
     });
@@ -1264,7 +1269,7 @@ app.post('/api/admin/wallet/credit', async (req,res) => {
       if (!matches) throw Object.assign(new Error('This credit request key was already used for different details.'),{statusCode:409});
     }
     if (inserted) await sendBgaWalletNotification(userId,'wallet','Wallet credited',`Your volunteer wallet was credited with ₦${amountNaira.toLocaleString()}.`);
-    res.status(inserted ? 201 : 200).json({success:true,message:inserted?'Volunteer wallet credited.':'This credit was already processed; no duplicate credit was added.',data:{reference,amountNaira,balanceKobo:await walletBalanceKobo(userId),duplicate:!inserted}});
+    res.status(inserted ? 201 : 200).json({success:true,message:inserted?'Volunteer wallet credited.':'This credit was already processed; no duplicate credit was added.',data:{reference,amountNaira,...walletBalanceResponse(await walletBalanceKobo(userId)),duplicate:!inserted}});
   } catch(e) {
     if (e.statusCode === 409) return res.status(409).json({success:false,message:e.message});
     console.error('Wallet credit failed:',e.message);
@@ -1276,7 +1281,7 @@ app.get('/api/admin/wallet/payouts', async (req,res) => {
   try {
     const admin = await requireWalletAdmin(req,res); if (!admin) return;
     const status = ['pending','processing','completed','failed','rejected'].includes(req.query.status) ? req.query.status : '';
-    const sql = `SELECT p.id,p.user_id AS userId,p.amount_kobo AS amountKobo,p.recipient_type AS recipientType,p.recipient_name AS recipientName,p.status,p.opay_reference AS reference,p.opay_order_no AS providerOrderNo,p.failure_reason AS failureReason,p.requested_at AS requestedAt,u.full_name AS volunteerName,u.email AS volunteerEmail FROM wallet_payouts p JOIN users u ON u.id=p.user_id ${status ? 'WHERE p.status=?' : ''} ORDER BY p.requested_at DESC LIMIT 100`;
+    const sql = `SELECT p.id,p.user_id AS userId,CAST(p.amount_kobo AS CHAR) AS amountKobo,p.recipient_type AS recipientType,p.recipient_name AS recipientName,p.status,p.opay_reference AS reference,p.opay_order_no AS providerOrderNo,p.failure_reason AS failureReason,p.requested_at AS requestedAt,u.full_name AS volunteerName,u.email AS volunteerEmail FROM wallet_payouts p JOIN users u ON u.id=p.user_id ${status ? 'WHERE p.status=?' : ''} ORDER BY p.requested_at DESC LIMIT 100`;
     const data = await db.all(sql,status ? [status] : []);
     res.json({success:true,data});
   } catch(e) { console.error('Payout queue failed:',e.message); res.status(500).json({success:false,message:'Could not load payout queue.'}); }
