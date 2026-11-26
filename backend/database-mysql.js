@@ -14,7 +14,8 @@ const pool = mysql.createPool({
   database: process.env.MYSQL_DATABASE,
   user: process.env.MYSQL_USER,
   password: process.env.MYSQL_PASSWORD,
-  ssl: {
+  // TLS verification stays enabled by default. Disable it only for isolated local CI MySQL.
+  ssl: process.env.MYSQL_SSL === 'false' ? undefined : {
     ca: fs.readFileSync(process.env.MYSQL_CA_PATH || path.join(__dirname, 'mysql-ca.pem'), 'utf8'),
     rejectUnauthorized: true
   },
