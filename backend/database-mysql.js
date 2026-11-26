@@ -29,6 +29,8 @@ const pool = mysql.createPool({
 
 function convertSql(sql) {
   sql = sql.replace(/\bINSERT\s+OR\s+IGNORE\s+INTO\b/gi, 'INSERT IGNORE INTO');
+  // SQLite REPLACE semantics are supported by both SQLite and MySQL.
+  sql = sql.replace(/\bINSERT\s+OR\s+REPLACE\s+INTO\b/gi, 'REPLACE INTO');
   sql = sql.replace(/\s+COLLATE\s+NOCASE\b/gi, '');
   sql = sql.replace(/\b([A-Za-z_][A-Za-z0-9_]*)\s+TEXT\s+PRIMARY\s+KEY\b/gi, '$1 VARCHAR(191) PRIMARY KEY');
   sql = sql.replace(/\b([A-Za-z_][A-Za-z0-9_]*)\s+TEXT\s+(NOT\s+NULL\s+)?DEFAULT\s+('(?:[^']|'')*'|[0-9]+)/gi, (_, col, notNull = '', def) => `${col} VARCHAR(191) ${notNull}${notNull ? '' : ''}DEFAULT ${def}`);
