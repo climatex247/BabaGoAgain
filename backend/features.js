@@ -40,7 +40,7 @@ function install(app, ctx) {
   const publitioPublicReady = new Set();
   async function ensurePublitioPublic(mediaUrl) {
     const parsed = new URL(mediaUrl);
-    if (parsed.protocol !== 'https:' || !/(^|\\.)publit\\.io$/i.test(parsed.hostname)) throw new Error('Invalid Publitio media URL.');
+    if (parsed.protocol !== 'https:' || !(parsed.hostname === 'publit.io' || parsed.hostname.endsWith('.publit.io'))) throw new Error('Invalid Publitio media URL.');
     const match = parsed.pathname.match(/\/([^/]+)\.(?:mp4|webm|ogv)$/i);
     if (!match) throw new Error('Could not identify the Publitio file.');
     const fileId = match[1];

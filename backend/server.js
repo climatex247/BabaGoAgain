@@ -62,7 +62,13 @@ const resetPasswordLimiter = makeAuthLimiter(
 
 app.disable('x-powered-by');
 
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      frameSrc: ["'self'", "https://media.publit.io", "https://*.publit.io"]
+    }
+  }
+}));
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://127.0.0.1:5000'
 }));
