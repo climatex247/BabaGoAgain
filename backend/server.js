@@ -151,7 +151,7 @@ app.get('/api', (req, res) => {
 
 app.use(express.static(frontendPath, {
   setHeaders(res, filePath) {
-    if (/register\.(js|html)$/.test(filePath)) {
+    if (/register\.(js|html)$/.test(filePath) || /index\.html$/.test(filePath) || /baba-go-again-welcome-2027\.webp$/.test(filePath)) {
       res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
       res.setHeader('Pragma', 'no-cache');
       res.setHeader('Expires', '0');
@@ -160,6 +160,9 @@ app.use(express.static(frontendPath, {
 }));
 
 app.get('/', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   res.sendFile(path.join(frontendPath, 'index.html'));
 });
 
