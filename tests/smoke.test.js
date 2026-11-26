@@ -78,6 +78,11 @@ assert.match(featuresSource, /ALTER TABLE bga_community_reports MODIFY COLUMN ta
 assert.match(featuresSource, /Refusing to narrow/,'Schema migration must refuse to truncate existing values');
 assert.doesNotMatch(featuresSource, /\bid TEXT PRIMARY KEY/i,'MySQL feature tables must not use TEXT primary keys');
 assert.match(featuresSource, /id VARCHAR\(191\) PRIMARY KEY/,'Feature table identifiers must use bounded MySQL primary-key columns');
+assert.match(featuresSource, /const featureForeignKeys = \[/,'Feature relationships must have explicit MySQL foreign-key migrations');
+assert.match(featuresSource, /information_schema\.TABLE_CONSTRAINTS/,'Foreign-key migrations must be idempotent');
+assert.match(featuresSource, /orphan_count/,'Foreign-key migrations must detect orphan rows before enforcement');
+assert.match(featuresSource, /ADD CONSTRAINT.*FOREIGN KEY/,'Feature relationships must be enforced by real table-level foreign keys');
+assert.doesNotMatch(featuresSource, /VARCHAR\(191\) NOT NULL REFERENCES/,'MySQL must not rely on ignored inline REFERENCES syntax');
 assert.match(featuresSource, /is_read TINYINT NOT NULL DEFAULT 0/,'Notification read state must use a MySQL integer type');
 assert.match(walletServer, /is_read TINYINT NOT NULL DEFAULT 0/,'Wallet notification schema must be MySQL compatible');
 assert.match(walletServer, /The payout status changed during reconciliation/,'OPay status reconciliation must detect concurrent state changes');
