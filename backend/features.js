@@ -71,6 +71,8 @@ function install(app, ctx) {
       await db.ready();
       const statements = [
         `CREATE TABLE IF NOT EXISTS bga_conversations (id VARCHAR(191) PRIMARY KEY, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
+        `CREATE TABLE IF NOT EXISTS bga_friend_requests (id VARCHAR(191) PRIMARY KEY, requester_id VARCHAR(191) NOT NULL, addressee_id VARCHAR(191) NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'pending', created_at VARCHAR(40) NOT NULL, updated_at VARCHAR(40) NOT NULL, UNIQUE(requester_id,addressee_id), CHECK(requester_id<>addressee_id), CHECK(status IN ('pending','accepted','declined')))`,
+        `CREATE INDEX IF NOT EXISTS idx_bga_friend_requests_inbox ON bga_friend_requests(addressee_id,status,created_at)`,
         `CREATE TABLE IF NOT EXISTS bga_conversation_members (conversation_id VARCHAR(191) NOT NULL, user_id VARCHAR(191) NOT NULL, joined_at TEXT NOT NULL, PRIMARY KEY(conversation_id,user_id))`,
         `CREATE TABLE IF NOT EXISTS bga_messages (id VARCHAR(191) PRIMARY KEY, conversation_id VARCHAR(191) NOT NULL, sender_id VARCHAR(191) NOT NULL, body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 4000), created_at VARCHAR(40) NOT NULL, read_at VARCHAR(40))`,
         `CREATE TABLE IF NOT EXISTS bga_notifications (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL, type VARCHAR(50) NOT NULL DEFAULT 'general', title VARCHAR(191) NOT NULL, body TEXT NOT NULL, link VARCHAR(500) NOT NULL DEFAULT '/notifications', is_read TINYINT NOT NULL DEFAULT 0, created_at VARCHAR(40) NOT NULL, read_at VARCHAR(40))`,
@@ -121,6 +123,7 @@ function install(app, ctx) {
         ['bga_community_reports','created_at',40],
         ['bga_admin_audit','details',2000],
         ['bga_conversations','id',191],
+        ['bga_friend_requests','id',191],['bga_friend_requests','requester_id',191],['bga_friend_requests','addressee_id',191],
         ['bga_public_profiles','id',191],
         ['bga_profile_applications','evidence_url',1000],
         ['bga_profile_applications','review_note',1000],
@@ -185,6 +188,7 @@ function install(app, ctx) {
       // All IDs are bounded and validated above; nullable reviewer/grantor columns stay nullable.
       const featureFkColumns = [
         ['bga_conversations','id','NOT NULL'],
+        ['bga_friend_requests','id','NOT NULL'],['bga_friend_requests','requester_id','NOT NULL'],['bga_friend_requests','addressee_id','NOT NULL'],
         ['bga_public_profiles','id','NOT NULL'],
         ['bga_conversation_members','conversation_id','NOT NULL'],['bga_conversation_members','user_id','NOT NULL'],
         ['bga_messages','conversation_id','NOT NULL'],['bga_messages','sender_id','NOT NULL'],
@@ -215,6 +219,8 @@ function install(app, ctx) {
       // MySQL ignores column-level REFERENCES clauses. Add real InnoDB foreign keys
       // explicitly, after validating legacy rows so startup never silently deletes data.
       const featureForeignKeys = [
+        ['bga_friend_requests','fk_bga_friend_requests_requester','requester_id','users','id','CASCADE'],
+        ['bga_friend_requests','fk_bga_friend_requests_addressee','addressee_id','users','id','CASCADE'],
         ['bga_conversation_members','fk_bga_conv_members_conversation','conversation_id','bga_conversations','id','CASCADE'],
         ['bga_conversation_members','fk_bga_conv_members_user','user_id','users','id','CASCADE'],
         ['bga_messages','fk_bga_messages_conversation','conversation_id','bga_conversations','id','CASCADE'],
@@ -398,6 +404,70 @@ function install(app, ctx) {
 
   app.get('/api/members/search', async (req,res) => {try{const me=await user(req,res);if(!me)return;const q=safe(req.query.q,80);if(q.length<2)return res.json({success:true,data:[]});const rows=await db.all("SELECT id,full_name AS name FROM users WHERE id<>? AND status='active' AND email_verified=1 AND full_name LIKE ? ORDER BY full_name LIMIT 20",[me.id,'%'+q.replace(/[%_\\]/g,'')+'%']);res.json({success:true,data:rows});}catch(e){res.status(500).json({success:false,message:'Could not search members.'});}});
 
+  // Friendship lifecycle: only accepted friends may open or send private conversations.
+  app.get('/api/friends', async (req,res) => {
+    try { const me=await user(req,res); if(!me)return;
+      const rows=await db.all(`SELECT u.id,u.full_name AS name,fr.updated_at AS since
+        FROM bga_friend_requests fr JOIN users u ON u.id=CASE WHEN fr.requester_id=? THEN fr.addressee_id ELSE fr.requester_id END
+        WHERE (fr.requester_id=? OR fr.addressee_id=?) AND fr.status='accepted'
+        ORDER BY u.full_name`,[me.id,me.id,me.id]);
+      res.json({success:true,data:rows});
+    } catch(e){console.error('friends list',e);res.status(500).json({success:false,message:'Could not load friends.'});}
+  });
+  app.get('/api/friends/requests', async (req,res) => {
+    try { const me=await user(req,res); if(!me)return;
+      const incoming=await db.all(`SELECT fr.id,fr.requester_id AS userId,u.full_name AS name,fr.created_at AS createdAt
+        FROM bga_friend_requests fr JOIN users u ON u.id=fr.requester_id
+        WHERE fr.addressee_id=? AND fr.status='pending' ORDER BY fr.created_at DESC`,[me.id]);
+      const outgoing=await db.all(`SELECT fr.id,fr.addressee_id AS userId,u.full_name AS name,fr.created_at AS createdAt
+        FROM bga_friend_requests fr JOIN users u ON u.id=fr.addressee_id
+        WHERE fr.requester_id=? AND fr.status='pending' ORDER BY fr.created_at DESC`,[me.id]);
+      res.json({success:true,data:{incoming,outgoing}});
+    } catch(e){console.error('friend requests',e);res.status(500).json({success:false,message:'Could not load friend requests.'});}
+  });
+  app.post('/api/friends/requests', async (req,res) => {
+    try { const me=await user(req,res); if(!me)return;
+      const target=safe(req.body.userId,191);
+      if(!target || target===me.id)return res.status(400).json({success:false,message:'Choose another member.'});
+      const other=await db.get("SELECT id FROM users WHERE id=? AND status='active' AND email_verified=1",[target]);
+      const friendship=await db.get("SELECT id FROM bga_friend_requests WHERE status='accepted' AND ((requester_id=? AND addressee_id=?) OR (requester_id=? AND addressee_id=?)) LIMIT 1",[me.id,target,target,me.id]);
+      if(!friendship)return res.status(403).json({success:false,message:'You can only start a private conversation with an accepted friend.'});
+      if(!other)return res.status(404).json({success:false,message:'Member not found or not active.'});
+      const accepted=await db.get("SELECT id FROM bga_friend_requests WHERE status='accepted' AND ((requester_id=? AND addressee_id=?) OR (requester_id=? AND addressee_id=?)) LIMIT 1",[me.id,target,target,me.id]);
+      if(accepted)return res.status(409).json({success:false,message:'You are already friends.'});
+      const reverse=await db.get("SELECT id FROM bga_friend_requests WHERE requester_id=? AND addressee_id=? AND status='pending'",[target,me.id]);
+      if(reverse){await db.run("UPDATE bga_friend_requests SET status='accepted',updated_at=? WHERE id=? AND status='pending'",[date(),reverse.id]);return res.json({success:true,message:'Friend request accepted. You are now friends.'});}
+      const prior=await db.get("SELECT id,status FROM bga_friend_requests WHERE requester_id=? AND addressee_id=?",[me.id,target]);
+      if(prior?.status==='pending')return res.status(409).json({success:false,message:'Friend request already sent.'});
+      if(prior)await db.run("UPDATE bga_friend_requests SET status='pending',created_at=?,updated_at=? WHERE id=?",[date(),date(),prior.id]);
+      else await db.run("INSERT INTO bga_friend_requests (id,requester_id,addressee_id,status,created_at,updated_at) VALUES (?,?,?,'pending',?,?)",[id(),me.id,target,date(),date()]);
+      try{await db.run('INSERT INTO bga_notifications (id,user_id,type,title,body,link,is_read,created_at) VALUES (?,?,?,?,?,?,0,?)',[id(),target,'friend_request','New friend request',safe(me.full_name,100)+' sent you a friend request.','/messages',date()]);}catch(e){console.error('friend request notification',e);}
+      res.status(201).json({success:true,message:'Friend request sent.'});
+    } catch(e){console.error('friend request send',e);res.status(500).json({success:false,message:'Could not send friend request.'});}
+  });
+  app.post('/api/friends/requests/:id/accept', async (req,res) => {
+    try {const me=await user(req,res);if(!me)return;
+      const result=await db.run("UPDATE bga_friend_requests SET status='accepted',updated_at=? WHERE id=? AND addressee_id=? AND status='pending'",[date(),req.params.id,me.id]);
+      if(result.changes!==1)return res.status(404).json({success:false,message:'Pending friend request not found.'});
+      res.json({success:true,message:'Friend request accepted.'});
+    }catch(e){console.error('friend request accept',e);res.status(500).json({success:false,message:'Could not accept friend request.'});}
+  });
+  app.post('/api/friends/requests/:id/decline', async (req,res) => {
+    try {const me=await user(req,res);if(!me)return;
+      const result=await db.run("UPDATE bga_friend_requests SET status='declined',updated_at=? WHERE id=? AND addressee_id=? AND status='pending'",[date(),req.params.id,me.id]);
+      if(result.changes!==1)return res.status(404).json({success:false,message:'Pending friend request not found.'});
+      res.json({success:true,message:'Friend request declined.'});
+    }catch(e){console.error('friend request decline',e);res.status(500).json({success:false,message:'Could not decline friend request.'});}
+  });
+  app.delete('/api/friends/:userId', async (req,res) => {
+    try {const me=await user(req,res);if(!me)return;const target=safe(req.params.userId,191);
+      const result=await db.run("DELETE FROM bga_friend_requests WHERE status='accepted' AND ((requester_id=? AND addressee_id=?) OR (requester_id=? AND addressee_id=?))",[me.id,target,target,me.id]);
+      if(result.changes!==1)return res.status(404).json({success:false,message:'Friendship not found.'});
+      res.json({success:true,message:'Friend removed.'});
+    }catch(e){console.error('friend remove',e);res.status(500).json({success:false,message:'Could not remove friend.'});}
+  });
+
+
   app.get('/messages', (req,res) => res.sendFile(path.join(frontendPath,'messages.html')));
   app.get('/media', (req,res) => res.sendFile(path.join(frontendPath,'media.html')));
   app.get('/public-figures', (req,res) => res.sendFile(path.join(frontendPath,'public-figures.html')));
@@ -435,7 +505,7 @@ function install(app, ctx) {
     catch(e){console.error('message read',e);res.status(500).json({success:false,message:'Could not load messages.'});}
   });
   app.post('/api/messages/conversations/:id', async (req,res) => {
-    try { const me=await user(req,res);if(!me)return;const body=safe(req.body.body,4000);if(!body)return res.status(400).json({success:false,message:'Message cannot be empty.'});const membership=await db.get('SELECT 1 AS ok FROM bga_conversation_members WHERE conversation_id=? AND user_id=?',[req.params.id,me.id]);if(!membership)return res.status(404).json({success:false,message:'Conversation not found.'});const msg=id(),now=date();await db.transaction(async tx =>{await tx.run('INSERT INTO bga_messages (id,conversation_id,sender_id,body,created_at) VALUES (?,?,?,?,?)',[msg,req.params.id,me.id,body,now]);await tx.run('UPDATE bga_conversations SET updated_at=? WHERE id=?',[now,req.params.id]);});try{const recipients=await db.all('SELECT user_id AS userId FROM bga_conversation_members WHERE conversation_id=? AND user_id<>?',[req.params.id,me.id]);for(const recipient of recipients){await db.run('INSERT INTO bga_notifications (id,user_id,type,title,body,link,is_read,created_at) VALUES (?,?,?,?,?,?,0,?)',[id(),recipient.userId,'message','New message from '+safe(me.full_name,100),body.slice(0,300),'/messages',now]);}}catch(notificationError){console.error('message notification',notificationError);}res.status(201).json({success:true,data:{id:msg,body,createdAt:now,senderId:me.id,senderName:me.full_name}}); }
+    try { const me=await user(req,res);if(!me)return;const body=safe(req.body.body,4000);if(!body)return res.status(400).json({success:false,message:'Message cannot be empty.'});const membership=await db.get('SELECT 1 AS ok FROM bga_conversation_members WHERE conversation_id=? AND user_id=?',[req.params.id,me.id]);if(!membership)return res.status(404).json({success:false,message:'Conversation not found.'});const otherMember=await db.get('SELECT user_id AS userId FROM bga_conversation_members WHERE conversation_id=? AND user_id<>? LIMIT 1',[req.params.id,me.id]);if(!otherMember)return res.status(403).json({success:false,message:'This private conversation is unavailable.'});const friendship=await db.get("SELECT id FROM bga_friend_requests WHERE status='accepted' AND ((requester_id=? AND addressee_id=?) OR (requester_id=? AND addressee_id=?)) LIMIT 1",[me.id,otherMember.userId,otherMember.userId,me.id]);if(!friendship)return res.status(403).json({success:false,message:'You must be accepted friends to send private messages.'});const msg=id(),now=date();await db.transaction(async tx =>{await tx.run('INSERT INTO bga_messages (id,conversation_id,sender_id,body,created_at) VALUES (?,?,?,?,?)',[msg,req.params.id,me.id,body,now]);await tx.run('UPDATE bga_conversations SET updated_at=? WHERE id=?',[now,req.params.id]);});try{const recipients=await db.all('SELECT user_id AS userId FROM bga_conversation_members WHERE conversation_id=? AND user_id<>?',[req.params.id,me.id]);for(const recipient of recipients){await db.run('INSERT INTO bga_notifications (id,user_id,type,title,body,link,is_read,created_at) VALUES (?,?,?,?,?,?,0,?)',[id(),recipient.userId,'message','New message from '+safe(me.full_name,100),body.slice(0,300),'/messages',now]);}}catch(notificationError){console.error('message notification',notificationError);}res.status(201).json({success:true,data:{id:msg,body,createdAt:now,senderId:me.id,senderName:me.full_name}}); }
     catch(e){console.error('message send',e);res.status(500).json({success:false,message:'Could not send message.'});}
   });
 
