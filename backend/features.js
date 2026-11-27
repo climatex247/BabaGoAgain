@@ -76,6 +76,7 @@ function install(app, ctx) {
         `CREATE TABLE IF NOT EXISTS bga_conversation_members (conversation_id VARCHAR(191) NOT NULL, user_id VARCHAR(191) NOT NULL, joined_at TEXT NOT NULL, PRIMARY KEY(conversation_id,user_id))`,
         `CREATE TABLE IF NOT EXISTS bga_messages (id VARCHAR(191) PRIMARY KEY, conversation_id VARCHAR(191) NOT NULL, sender_id VARCHAR(191) NOT NULL, body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 4000), created_at VARCHAR(40) NOT NULL, read_at VARCHAR(40))`,
         `CREATE TABLE IF NOT EXISTS bga_message_attachments (id VARCHAR(191) PRIMARY KEY, message_id VARCHAR(191) NOT NULL, conversation_id VARCHAR(191) NOT NULL, uploader_id VARCHAR(191) NOT NULL, publitio_file_id VARCHAR(191) NOT NULL UNIQUE, filename VARCHAR(191) NOT NULL, mime_type VARCHAR(100) NOT NULL, bytes BIGINT NOT NULL, created_at VARCHAR(40) NOT NULL)`,
+        `CREATE INDEX IF NOT EXISTS idx_bga_message_attachments_conversation ON bga_message_attachments(conversation_id,created_at)`,
         `CREATE TABLE IF NOT EXISTS bga_notifications (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL, type VARCHAR(50) NOT NULL DEFAULT 'general', title VARCHAR(191) NOT NULL, body TEXT NOT NULL, link VARCHAR(500) NOT NULL DEFAULT '/notifications', is_read TINYINT NOT NULL DEFAULT 0, created_at VARCHAR(40) NOT NULL, read_at VARCHAR(40))`,
         `CREATE INDEX IF NOT EXISTS idx_bga_messages_conversation ON bga_messages(conversation_id,created_at)`,
         `CREATE TABLE IF NOT EXISTS bga_profile_applications (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL, category TEXT NOT NULL, display_name TEXT NOT NULL, biography TEXT NOT NULL, evidence_url VARCHAR(1000) NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')), reviewed_by VARCHAR(191), reviewed_at TEXT, review_note VARCHAR(1000) NOT NULL DEFAULT '', created_at TEXT NOT NULL, UNIQUE(user_id))`,
@@ -536,12 +537,12 @@ function install(app, ctx) {
       const friendship=await db.get("SELECT id FROM bga_friend_requests WHERE status='accepted' AND ((requester_id=? AND addressee_id=?) OR (requester_id=? AND addressee_id=?)) LIMIT 1",[me.id,other.userId,other.userId,me.id]);
       if(!friendship)return res.status(403).json({success:false,message:'You must be accepted friends to share attachments.'});
       const mime=String(req.headers['content-type']||'').split(';')[0].toLowerCase();
-      const extByMime={'image/jpeg':'jpg','image/png':'png','image/gif':'gif','image/webp':'webp','audio/mpeg':'mp3','audio/wav':'wav','audio/x-wav':'wav','audio/ogg':'ogg','audio/mp4':'m4a','video/mp4':'mp4','video/webm':'webm'};
+      const extByMime={'image/jpeg':['jpg','jpeg'],'image/png':['png'],'image/gif':['gif'],'image/webp':['webp'],'audio/mpeg':['mp3'],'audio/wav':['wav'],'audio/x-wav':['wav'],'audio/ogg':['ogg'],'audio/mp4':['m4a','mp4'],'video/mp4':['mp4'],'video/webm':['webm']};
       if(!extByMime[mime])return res.status(415).json({success:false,message:'Supported files: JPG, PNG, GIF, WebP, MP3, WAV, OGG, M4A, MP4 and WebM.'});
       const maxBytes=mime.startsWith('image/')?15*1024*1024:(mime.startsWith('audio/')?25*1024*1024:100*1024*1024);
       const declared=Number(req.headers['content-length']||0);
       if(!Number.isSafeInteger(declared)||declared<12||declared>maxBytes)return res.status(413).json({success:false,message:'This file is empty or exceeds the size limit for its type.'});
-      const filename=safe(req.headers['x-bga-filename'],120).replace(/[^A-Za-z0-9._ -]/g,'_').replace(/\s+/g,' ').trim()||('attachment.'+extByMime[mime]);
+      const filename=safe(req.headers['x-bga-filename'],120).replace(/[^A-Za-z0-9._ -]/g,'_').replace(/\s+/g,' ').trim()||('attachment.'+extByMime[mime][0]);
       const iterator=req[Symbol.asyncIterator]();
       let first=Buffer.alloc(0),total=0;
       while(first.length<16){const part=await iterator.next();if(part.done)break;first=Buffer.concat([first,part.value]);total+=part.value.length;if(total>maxBytes)return res.status(413).json({success:false,message:'File exceeds the upload limit.'});}
@@ -583,7 +584,8 @@ function install(app, ctx) {
       }
       if(!['private','0',0,false].includes(asset.privacy))throw new Error('Storage did not confirm private file access.');
       const ext=String(asset.extension||'').toLowerCase().replace(/^\./,'');
-      if(ext!==extByMime[mime])throw new Error('Stored attachment type did not match the uploaded file.');
+      const expectedAssetType=mime.startsWith('image/')?'image':mime.startsWith('audio/')?'audio':'video';
+      if(!extByMime[mime].includes(ext)||String(asset.type||'').toLowerCase()!==expectedAssetType)throw new Error('Stored attachment type did not match the uploaded file.');
       const actualSize=Number(asset.size);
       if(!Number.isFinite(actualSize)||actualSize!==declared||actualSize>maxBytes)throw new Error('Stored attachment size did not match the uploaded file.');
       const msg=id(),attachmentId=id(),now=date();
