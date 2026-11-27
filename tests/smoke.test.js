@@ -86,6 +86,11 @@ const featuresSource = fs.readFileSync(path.join(root,'backend/features.js'),'ut
 assert.match(featuresSource, /CREATE TABLE IF NOT EXISTS bga_admin_roles \(user_id VARCHAR\(191\) NOT NULL, role VARCHAR\(50\) NOT NULL/,'MySQL administrator role keys must use indexable types');
 assert.match(featuresSource, /return async function initializeFeatures\(\)/,'Feature schema readiness must be awaited during startup');
 assert.match(featuresSource, /CREATE INDEX IF NOT EXISTS idx_bga_messages_conversation/,'Conversation index must be defined');
+assert.match(featuresSource,/CREATE TABLE IF NOT EXISTS bga_friend_requests/,'Friend requests must have a persistent schema');
+assert.match(featuresSource,/app\.post\('\/api\/friends\/requests'/,'Friend request creation endpoint must exist');
+assert.match(featuresSource,/You can only start a private conversation with an accepted friend/,'New private conversations must require accepted friendship');
+assert.match(featuresSource,/You must be accepted friends to send private messages/,'Private message sending must require accepted friendship');
+assert.match(fs.readFileSync(path.join(root,'frontend/messages.js'),'utf8'),/data-accept/,'Messages page must expose incoming friend request acceptance');
 assert.match(featuresSource, /ALTER TABLE bga_messages MODIFY COLUMN created_at VARCHAR\(40\)/,'MySQL message timestamp index column must be bounded');
 assert.match(featuresSource, /ALTER TABLE bga_media_posts MODIFY COLUMN media_type VARCHAR\(20\)/,'MySQL media category index column must be bounded');
 assert.match(featuresSource, /ALTER TABLE bga_community_reports MODIFY COLUMN target_id VARCHAR\(191\)/,'MySQL report unique-key column must be bounded');
