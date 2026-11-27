@@ -1,0 +1,18 @@
+{
+  "appId": "com.babagoagain.app",
+  "appName": "Baba Go Again",
+  "webDir": "www",
+  "server": {
+    "url": "https://babagoagain.onrender.com",
+    "cleartext": false,
+    "androidScheme": "https",
+    "allowNavigation": [
+      "babagoagain.onrender.com"
+    ]
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 0
+    }
+  }
+}
