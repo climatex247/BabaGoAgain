@@ -90,6 +90,10 @@ assert.match(featuresSource,/CREATE TABLE IF NOT EXISTS bga_friend_requests/,'Fr
 assert.match(featuresSource,/app\.post\('\/api\/friends\/requests'/,'Friend request creation endpoint must exist');
 assert.match(featuresSource,/You can only start a private conversation with an accepted friend/,'New private conversations must require accepted friendship');
 assert.match(featuresSource,/You must be accepted friends to send private messages/,'Private message sending must require accepted friendship');
+assert.match(featuresSource,/CREATE TABLE IF NOT EXISTS bga_message_attachments/,'Private message attachments must have a persistent record');
+assert.match(featuresSource,/privacy:'0'/,'Private attachments must be uploaded with private Publitio privacy');
+assert.match(featuresSource,/api\/messages\/conversations\/:id\/attachments\/:attachmentId/,'Attachment delivery must use a participant-authorized endpoint');
+assert.match(fs.readFileSync(path.join(root,'frontend/messages.js'),'utf8'),/attachmentForm/,'Messages page must support private attachment uploads');
 assert.match(fs.readFileSync(path.join(root,'frontend/messages.js'),'utf8'),/data-accept/,'Messages page must expose incoming friend request acceptance');
 assert.match(featuresSource, /ALTER TABLE bga_messages MODIFY COLUMN created_at VARCHAR\(40\)/,'MySQL message timestamp index column must be bounded');
 assert.match(featuresSource, /ALTER TABLE bga_media_posts MODIFY COLUMN media_type VARCHAR\(20\)/,'MySQL media category index column must be bounded');
