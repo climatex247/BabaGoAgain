@@ -71,7 +71,7 @@ function install(app, ctx) {
       await db.ready();
       const statements = [
         `CREATE TABLE IF NOT EXISTS bga_conversations (id VARCHAR(191) PRIMARY KEY, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
-        `CREATE TABLE IF NOT EXISTS bga_friend_requests (id VARCHAR(191) PRIMARY KEY, requester_id VARCHAR(191) NOT NULL, addressee_id VARCHAR(191) NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'pending', created_at VARCHAR(40) NOT NULL, updated_at VARCHAR(40) NOT NULL, UNIQUE(requester_id,addressee_id), CHECK(requester_id<>addressee_id), CHECK(status IN ('pending','accepted','declined')))`,
+        `CREATE TABLE IF NOT EXISTS bga_friend_requests (id VARCHAR(191) PRIMARY KEY, requester_id VARCHAR(191) NOT NULL, addressee_id VARCHAR(191) NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'pending', created_at VARCHAR(40) NOT NULL, updated_at VARCHAR(40) NOT NULL, UNIQUE(requester_id,addressee_id), CHECK(status IN ('pending','accepted','declined')))`,
         `CREATE INDEX IF NOT EXISTS idx_bga_friend_requests_inbox ON bga_friend_requests(addressee_id,status,created_at)`,
         `CREATE TABLE IF NOT EXISTS bga_conversation_members (conversation_id VARCHAR(191) NOT NULL, user_id VARCHAR(191) NOT NULL, joined_at TEXT NOT NULL, PRIMARY KEY(conversation_id,user_id))`,
         `CREATE TABLE IF NOT EXISTS bga_messages (id VARCHAR(191) PRIMARY KEY, conversation_id VARCHAR(191) NOT NULL, sender_id VARCHAR(191) NOT NULL, body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 4000), created_at VARCHAR(40) NOT NULL, read_at VARCHAR(40))`,
@@ -182,6 +182,16 @@ function install(app, ctx) {
           !/^[A-Za-z0-9_]+$/.test(String(userIdColumn.CHARACTER_SET_NAME || '')) ||
           !/^[A-Za-z0-9_]+$/.test(String(userIdColumn.COLLATION_NAME || ''))) {
         throw new Error('users.id must be VARCHAR(191) with a valid MySQL character set and collation before feature foreign keys can be installed.');
+      }
+      // Friend-request IDs are checked by the API. Drop legacy table CHECK constraints before
+      // changing ID collations: MySQL may evaluate requester_id <> addressee_id mid-migration
+      // while one column has the old collation and the other already has users.id's collation.
+      const friendChecks = await db.all(
+        "SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA=DATABASE() AND TABLE_NAME='bga_friend_requests' AND CONSTRAINT_TYPE='CHECK'"
+      );
+      for (const check of friendChecks) {
+        if (!/^[A-Za-z0-9_]+$/.test(String(check.CONSTRAINT_NAME || ''))) throw new Error('Unexpected friend-request check constraint name.');
+        await db.run('ALTER TABLE bga_friend_requests DROP CHECK \`' + check.CONSTRAINT_NAME + '\`');
       }
       const idCharset = userIdColumn.CHARACTER_SET_NAME;
       const idCollation = userIdColumn.COLLATION_NAME;
