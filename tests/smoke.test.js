@@ -91,7 +91,7 @@ assert.match(featuresSource,/app\.post\('\/api\/friends\/requests'/,'Friend requ
 assert.match(featuresSource,/You can only start a private conversation with an accepted friend/,'New private conversations must require accepted friendship');
 assert.match(featuresSource,/You must be accepted friends to send private messages/,'Private message sending must require accepted friendship');
 assert.match(featuresSource,/You must be accepted friends to view private messages/,'Reading private messages must require current accepted friendship');
-assert.match(featuresSource,/WHERE EXISTS \\(SELECT 1 FROM bga_conversation_members other JOIN bga_friend_requests/,'Conversation list must not reveal removed-friend conversations');
+assert.match(featuresSource,/WHERE EXISTS \(SELECT 1 FROM bga_conversation_members other JOIN bga_friend_requests/,'Conversation list must not reveal removed-friend conversations');
 assert.match(featuresSource,/CREATE TABLE IF NOT EXISTS bga_message_attachments/,'Private message attachments must have a persistent record');
 assert.match(featuresSource,/privacy:'0'/,'Private attachments must be uploaded with private Publitio privacy');
 assert.match(featuresSource,/api\/messages\/conversations\/:id\/attachments\/:attachmentId/,'Attachment delivery must use a participant-authorized endpoint');
