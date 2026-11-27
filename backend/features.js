@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { Transform } = require('stream');
+const { Transform, Readable } = require('stream');
 const { pipeline } = require('stream/promises');
 
 const CATEGORIES = ['influencer', 'musician', 'politician', 'community_leader', 'religious_leader'];
@@ -75,6 +75,7 @@ function install(app, ctx) {
         `CREATE INDEX IF NOT EXISTS idx_bga_friend_requests_inbox ON bga_friend_requests(addressee_id,status,created_at)`,
         `CREATE TABLE IF NOT EXISTS bga_conversation_members (conversation_id VARCHAR(191) NOT NULL, user_id VARCHAR(191) NOT NULL, joined_at TEXT NOT NULL, PRIMARY KEY(conversation_id,user_id))`,
         `CREATE TABLE IF NOT EXISTS bga_messages (id VARCHAR(191) PRIMARY KEY, conversation_id VARCHAR(191) NOT NULL, sender_id VARCHAR(191) NOT NULL, body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 4000), created_at VARCHAR(40) NOT NULL, read_at VARCHAR(40))`,
+        `CREATE TABLE IF NOT EXISTS bga_message_attachments (id VARCHAR(191) PRIMARY KEY, message_id VARCHAR(191) NOT NULL, conversation_id VARCHAR(191) NOT NULL, uploader_id VARCHAR(191) NOT NULL, publitio_file_id VARCHAR(191) NOT NULL UNIQUE, filename VARCHAR(191) NOT NULL, mime_type VARCHAR(100) NOT NULL, bytes BIGINT NOT NULL, created_at VARCHAR(40) NOT NULL)`,
         `CREATE TABLE IF NOT EXISTS bga_notifications (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL, type VARCHAR(50) NOT NULL DEFAULT 'general', title VARCHAR(191) NOT NULL, body TEXT NOT NULL, link VARCHAR(500) NOT NULL DEFAULT '/notifications', is_read TINYINT NOT NULL DEFAULT 0, created_at VARCHAR(40) NOT NULL, read_at VARCHAR(40))`,
         `CREATE INDEX IF NOT EXISTS idx_bga_messages_conversation ON bga_messages(conversation_id,created_at)`,
         `CREATE TABLE IF NOT EXISTS bga_profile_applications (id VARCHAR(191) PRIMARY KEY, user_id VARCHAR(191) NOT NULL, category TEXT NOT NULL, display_name TEXT NOT NULL, biography TEXT NOT NULL, evidence_url VARCHAR(1000) NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')), reviewed_by VARCHAR(191), reviewed_at TEXT, review_note VARCHAR(1000) NOT NULL DEFAULT '', created_at TEXT NOT NULL, UNIQUE(user_id))`,
@@ -511,7 +512,7 @@ function install(app, ctx) {
     } catch(e) { console.error('conversation create',e); res.status(500).json({success:false,message:'Could not start conversation.'}); }
   });
   app.get('/api/messages/conversations/:id', async (req,res) => {
-    try { const me=await user(req,res);if(!me)return; const membership=await db.get('SELECT 1 AS ok FROM bga_conversation_members WHERE conversation_id=? AND user_id=?',[req.params.id,me.id]);if(!membership)return res.status(404).json({success:false,message:'Conversation not found.'}); await db.run('UPDATE bga_messages SET read_at=? WHERE conversation_id=? AND sender_id<>? AND read_at IS NULL',[date(),req.params.id,me.id]); const rows=await db.all(`SELECT m.id,m.body,m.created_at AS createdAt,m.sender_id AS senderId,m.read_at AS readAt,u.full_name AS senderName FROM bga_messages m JOIN users u ON u.id=m.sender_id WHERE m.conversation_id=? ORDER BY m.created_at ASC LIMIT 300`,[req.params.id]);res.json({success:true,data:rows}); }
+    try { const me=await user(req,res);if(!me)return; const membership=await db.get('SELECT 1 AS ok FROM bga_conversation_members WHERE conversation_id=? AND user_id=?',[req.params.id,me.id]);if(!membership)return res.status(404).json({success:false,message:'Conversation not found.'}); await db.run('UPDATE bga_messages SET read_at=? WHERE conversation_id=? AND sender_id<>? AND read_at IS NULL',[date(),req.params.id,me.id]); const rows=await db.all(`SELECT m.id,m.body,m.created_at AS createdAt,m.sender_id AS senderId,m.read_at AS readAt,u.full_name AS senderName,a.id AS attachmentId,a.filename AS attachmentName,a.mime_type AS attachmentMime,a.bytes AS attachmentBytes FROM bga_messages m JOIN users u ON u.id=m.sender_id LEFT JOIN bga_message_attachments a ON a.message_id=m.id WHERE m.conversation_id=? ORDER BY m.created_at ASC LIMIT 300`,[req.params.id]);for(const row of rows){if(row.attachmentId){row.attachment={id:row.attachmentId,name:row.attachmentName,mimeType:row.attachmentMime,bytes:Number(row.attachmentBytes),url:'/api/messages/conversations/'+encodeURIComponent(req.params.id)+'/attachments/'+encodeURIComponent(row.attachmentId)};delete row.attachmentId;delete row.attachmentName;delete row.attachmentMime;delete row.attachmentBytes;}}res.json({success:true,data:rows}); }
     catch(e){console.error('message read',e);res.status(500).json({success:false,message:'Could not load messages.'});}
   });
   app.post('/api/messages/conversations/:id', async (req,res) => {
@@ -519,6 +520,121 @@ function install(app, ctx) {
     catch(e){console.error('message send',e);res.status(500).json({success:false,message:'Could not send message.'});}
   });
 
+
+
+  // Private attachments are uploaded to Publitio with privacy=0 and streamed back
+  // only after authenticating both conversation membership and current friendship.
+  app.post('/api/messages/conversations/:id/attachments', async (req,res) => {
+    let uploadedFileId = '';
+    try {
+      const me=await user(req,res); if(!me)return;
+      const conversationId=safe(req.params.id,191);
+      const membership=await db.get('SELECT 1 AS ok FROM bga_conversation_members WHERE conversation_id=? AND user_id=?',[conversationId,me.id]);
+      if(!membership)return res.status(404).json({success:false,message:'Conversation not found.'});
+      const other=await db.get('SELECT user_id AS userId FROM bga_conversation_members WHERE conversation_id=? AND user_id<>? LIMIT 1',[conversationId,me.id]);
+      if(!other)return res.status(403).json({success:false,message:'Private conversation unavailable.'});
+      const friendship=await db.get("SELECT id FROM bga_friend_requests WHERE status='accepted' AND ((requester_id=? AND addressee_id=?) OR (requester_id=? AND addressee_id=?)) LIMIT 1",[me.id,other.userId,other.userId,me.id]);
+      if(!friendship)return res.status(403).json({success:false,message:'You must be accepted friends to share attachments.'});
+      const mime=String(req.headers['content-type']||'').split(';')[0].toLowerCase();
+      const extByMime={'image/jpeg':'jpg','image/png':'png','image/gif':'gif','image/webp':'webp','audio/mpeg':'mp3','audio/wav':'wav','audio/x-wav':'wav','audio/ogg':'ogg','audio/mp4':'m4a','video/mp4':'mp4','video/webm':'webm'};
+      if(!extByMime[mime])return res.status(415).json({success:false,message:'Supported files: JPG, PNG, GIF, WebP, MP3, WAV, OGG, M4A, MP4 and WebM.'});
+      const maxBytes=mime.startsWith('image/')?15*1024*1024:(mime.startsWith('audio/')?25*1024*1024:100*1024*1024);
+      const declared=Number(req.headers['content-length']||0);
+      if(!Number.isSafeInteger(declared)||declared<12||declared>maxBytes)return res.status(413).json({success:false,message:'This file is empty or exceeds the size limit for its type.'});
+      const filename=safe(req.headers['x-bga-filename'],120).replace(/[^A-Za-z0-9._ -]/g,'_').replace(/\s+/g,' ').trim()||('attachment.'+extByMime[mime]);
+      const iterator=req[Symbol.asyncIterator]();
+      let first=Buffer.alloc(0),total=0;
+      while(first.length<16){const part=await iterator.next();if(part.done)break;first=Buffer.concat([first,part.value]);total+=part.value.length;if(total>maxBytes)return res.status(413).json({success:false,message:'File exceeds the upload limit.'});}
+      const valid= mime==='image/jpeg'?first[0]===0xff&&first[1]===0xd8&&first[2]===0xff :
+        mime==='image/png'?first.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])) :
+        mime==='image/gif'?first.subarray(0,3).toString()==='GIF' :
+        mime==='image/webp'?first.subarray(0,4).toString()==='RIFF'&&first.subarray(8,12).toString()==='WEBP' :
+        mime==='audio/mpeg'?(first.subarray(0,3).toString()==='ID3'||(first[0]===0xff&&(first[1]&0xe0)===0xe0)) :
+        (mime==='audio/wav'||mime==='audio/x-wav')?first.subarray(0,4).toString()==='RIFF'&&first.subarray(8,12).toString()==='WAVE' :
+        mime==='audio/ogg'?first.subarray(0,4).toString()==='OggS' :
+        (mime==='audio/mp4'||mime==='video/mp4')?first.subarray(4,8).toString()==='ftyp' :
+        first.subarray(0,4).equals(Buffer.from([0x1a,0x45,0xdf,0xa3]));
+      if(!valid)return res.status(415).json({success:false,message:'The file contents do not match the selected file type.'});
+      const boundary='----BabaGoAgainPrivate'+crypto.randomBytes(18).toString('hex');
+      const header=Buffer.from('--'+boundary+'\r\nContent-Disposition: form-data; name="file"; filename="'+filename+'"\r\nContent-Type: '+mime+'\r\n\r\n');
+      const footer=Buffer.from('\r\n--'+boundary+'--\r\n');
+      const auth=publitioSignature();
+      const query=new URLSearchParams({...auth,privacy:'0'});
+      async function* multipart(){
+        yield header; yield first;
+        while(true){const part=await iterator.next();if(part.done)break;total+=part.value.length;if(total>maxBytes)throw new Error('Attachment exceeds upload limit.');yield part.value;}
+        if(total!==declared)throw new Error('Upload size did not match the declared file size.');
+        yield footer;
+      }
+      const upstream=await fetch('https://api.publit.io/v1/files/create?'+query.toString(),{method:'POST',headers:{'Content-Type':'multipart/form-data; boundary='+boundary,'Content-Length':String(header.length+declared+footer.length),'Accept':'application/json'},body:multipart(),duplex:'half'});
+      const payload=await upstream.json().catch(()=>({}));
+      if(!upstream.ok||payload.success!==true||!payload.id)throw new Error('Private media storage rejected the upload (HTTP '+upstream.status+').');
+      uploadedFileId=String(payload.id);
+      let verified=await fetch('https://api.publit.io/v1/files/show/'+encodeURIComponent(uploadedFileId)+'?'+new URLSearchParams(publitioSignature()).toString(),{headers:{Accept:'application/json'}});
+      let asset=await verified.json().catch(()=>({}));
+      if(!verified.ok||asset.success!==true)throw new Error('Private attachment could not be verified.');
+      if(!['private','0',0,false].includes(asset.privacy)){
+        const update=new URLSearchParams({...publitioSignature(),privacy:'0'});
+        const changed=await fetch('https://api.publit.io/v1/files/update/'+encodeURIComponent(uploadedFileId)+'?'+update.toString(),{method:'PUT',headers:{Accept:'application/json'}});
+        const result=await changed.json().catch(()=>({}));
+        if(!changed.ok||result.success!==true)throw new Error('Could not lock the uploaded file as private.');
+        verified=await fetch('https://api.publit.io/v1/files/show/'+encodeURIComponent(uploadedFileId)+'?'+new URLSearchParams(publitioSignature()).toString(),{headers:{Accept:'application/json'}});
+        asset=await verified.json().catch(()=>({}));
+      }
+      if(!['private','0',0,false].includes(asset.privacy))throw new Error('Storage did not confirm private file access.');
+      const ext=String(asset.extension||'').toLowerCase().replace(/^\./,'');
+      if(ext!==extByMime[mime])throw new Error('Stored attachment type did not match the uploaded file.');
+      const actualSize=Number(asset.size);
+      if(!Number.isFinite(actualSize)||actualSize!==declared||actualSize>maxBytes)throw new Error('Stored attachment size did not match the uploaded file.');
+      const msg=id(),attachmentId=id(),now=date();
+      const body=mime.startsWith('image/')?'Shared an image':mime.startsWith('audio/')?'Shared an audio file':'Shared a video';
+      await db.transaction(async tx=>{
+        await tx.run('INSERT INTO bga_messages (id,conversation_id,sender_id,body,created_at) VALUES (?,?,?,?,?)',[msg,conversationId,me.id,body,now]);
+        await tx.run('INSERT INTO bga_message_attachments (id,message_id,conversation_id,uploader_id,publitio_file_id,filename,mime_type,bytes,created_at) VALUES (?,?,?,?,?,?,?,?,?)',[attachmentId,msg,conversationId,me.id,uploadedFileId,filename,mime,actualSize,now]);
+        await tx.run('UPDATE bga_conversations SET updated_at=? WHERE id=?',[now,conversationId]);
+      });
+      try{await db.run('INSERT INTO bga_notifications (id,user_id,type,title,body,link,is_read,created_at) VALUES (?,?,?,?,?,?,0,?)',[id(),other.userId,'message','Private attachment from '+safe(me.full_name,100),'A friend shared a private attachment with you.','/messages',now]);}catch(e){console.error('private attachment notification',e);}
+      res.status(201).json({success:true,message:'Private attachment sent.',data:{id:msg,attachmentId}});
+    }catch(e){
+      if(uploadedFileId){try{const q=new URLSearchParams(publitioSignature());await fetch('https://api.publit.io/v1/files/delete/'+encodeURIComponent(uploadedFileId)+'?'+q.toString(),{method:'DELETE'});}catch(cleanup){console.error('private attachment cleanup failed',cleanup.message);}}
+      console.error('private attachment upload failed',e.message);
+      if(!res.headersSent)res.status(/upload limit|size did not match/i.test(e.message)?413:502).json({success:false,message:'Could not securely send this attachment. '+String(e.message).slice(0,160)});
+    }
+  });
+
+  app.get('/api/messages/conversations/:id/attachments/:attachmentId', async (req,res) => {
+    try{
+      const me=await user(req,res);if(!me)return;
+      const conversationId=safe(req.params.id,191);
+      const member=await db.get('SELECT 1 AS ok FROM bga_conversation_members WHERE conversation_id=? AND user_id=?',[conversationId,me.id]);
+      if(!member)return res.status(404).end();
+      const other=await db.get('SELECT user_id AS userId FROM bga_conversation_members WHERE conversation_id=? AND user_id<>? LIMIT 1',[conversationId,me.id]);
+      if(!other)return res.status(404).end();
+      const friendship=await db.get("SELECT id FROM bga_friend_requests WHERE status='accepted' AND ((requester_id=? AND addressee_id=?) OR (requester_id=? AND addressee_id=?)) LIMIT 1",[me.id,other.userId,other.userId,me.id]);
+      if(!friendship)return res.status(403).end();
+      const attachment=await db.get('SELECT publitio_file_id AS fileId,filename,mime_type AS mimeType FROM bga_message_attachments WHERE id=? AND conversation_id=?',[req.params.attachmentId,conversationId]);
+      if(!attachment)return res.status(404).end();
+      const auth=new URLSearchParams(publitioSignature());
+      const shown=await fetch('https://api.publit.io/v1/files/show/'+encodeURIComponent(attachment.fileId)+'?'+auth.toString(),{headers:{Accept:'application/json'}});
+      const asset=await shown.json().catch(()=>({}));
+      if(!shown.ok||asset.success!==true||!['private','0',0,false].includes(asset.privacy))return res.status(404).end();
+      const signedUrl=String(asset.url_download||asset.url_preview||'');
+      let parsed;try{parsed=new URL(signedUrl);}catch{return res.status(502).end();}
+      if(parsed.protocol!=='https:'||!/(^|\.)publit\.io$/i.test(parsed.hostname))return res.status(502).end();
+      const headers={Accept:'*/*'};
+      if(req.headers.range)headers.Range=req.headers.range;
+      const file=await fetch(signedUrl,{headers});
+      if(!file.ok&&file.status!==206)return res.status(502).end();
+      res.status(file.status);
+      res.setHeader('Content-Type',attachment.mimeType);
+      res.setHeader('Content-Disposition','inline; filename="'+attachment.filename.replace(/["\\\r\n]/g,'_')+'"');
+      res.setHeader('Cache-Control','private, no-store');
+      res.setHeader('X-Content-Type-Options','nosniff');
+      for(const name of ['content-length','content-range','accept-ranges']){const value=file.headers.get(name);if(value)res.setHeader(name,value);}
+      if(!file.body)return res.end();
+      Readable.fromWeb(file.body).on('error',()=>res.destroy()).pipe(res);
+    }catch(e){console.error('private attachment delivery failed',e.message);if(!res.headersSent)res.status(502).end();}
+  });
 
   // Baba Go Again notification centre
   app.get('/notifications', (req,res) =>
